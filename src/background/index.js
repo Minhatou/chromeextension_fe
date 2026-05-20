@@ -8,15 +8,34 @@ chrome.runtime.onInstalled.addListener(() => {
     id: 'it-translator',
     title: 'Translate with IT Translator',
     contexts: ['selection'],
-  })
+  });
+  chrome.contextMenus.create({
+    id: 'it-explainer',
+    title: 'Explain with IT Translator',
+    contexts: ['selection'],
+  });
 })
 
 // Handle messages from Side Panel or Content Script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // If message is a request to translate, ensure Side Panel is open
+  // If message is a request to translate
   if (message.type === 'TRANSLATE_TEXT') {
-    chrome.sidePanel.open({ tabId: sender.tab.id });
-    // Note: The message will be received by Side Panel once it opens
+    const { text, context } = message;
+    
+    chrome.storage.local.get(['inferenceMode'], (data) => {
+      const mode = data.inferenceMode || 'local';
+      
+      if (mode === 'api') {
+        // In API mode, translate directly without opening sidebar
+        translateDirectly(text, context, sender.tab.id);
+      } else {
+        // In local mode, save to storage and open sidebar
+        chrome.storage.local.set({ 
+          pendingTranslation: { text, context, timestamp: Date.now() } 
+        });
+        chrome.sidePanel.open({ tabId: sender.tab.id });
+      }
+    });
   }
 
   // If message is from Side Panel (engine), forward it to the active tab (UI)
@@ -29,78 +48,153 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Handle context menu click — open side panel and translate
+// Helper function for direct translation in API mode
+async function translateDirectly(text, context, tabId) {
+  try {
+    chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode'], async (storageData) => {
+      const enabled = storageData.glossaryEnabled !== false;
+      const glossaryMode = storageData.glossaryMode || 'both';
+      const glossary = enabled ? (storageData.glossary || []) : [];
+      const glossaryDict = {};
+      const matchedTerms = [];
+      glossary.forEach(g => {
+        if (g.term && g.meaning) {
+          glossaryDict[g.term] = g.meaning;
+          if (text.toLowerCase().includes(g.term.toLowerCase())) {
+            matchedTerms.push(`${g.term} -> ${g.meaning}`);
+          }
+        }
+      });
+
+      console.log(`[Background] Translating selection. Glossary: Enabled=${enabled}, Mode=${glossaryMode}`);
+      if (enabled) {
+        console.log(`[Background] 📚 Từ điển hiện tại đang sử dụng:`, glossaryDict);
+      }
+      if (matchedTerms.length > 0) {
+        console.log(`[Background] 🎯 Khớp từ điển cá nhân cho:`, matchedTerms);
+      } else if (enabled) {
+        console.log(`[Background] ℹ️ Không khớp thuật ngữ nào trong từ điển hiện tại.`);
+      }
+
+      const response = await fetch(`${BASE_URL}/api/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text, 
+          context, 
+          target_lang: 'auto',
+          glossary: glossaryDict,
+          glossary_mode: glossaryMode
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API error (${response.status})`);
+      }
+      
+      const data = await response.json();
+      const translation = data.translation;
+      
+      chrome.tabs.sendMessage(tabId, {
+        type: 'GENERATE_PROGRESS',
+        payload: { partialText: translation, done: true }
+      });
+    });
+  } catch (err) {
+    console.error('[Background] Direct translation error:', err);
+    chrome.tabs.sendMessage(tabId, {
+      type: 'GENERATE_PROGRESS',
+      payload: { partialText: `Error: ${err.message}`, done: true }
+    });
+  }
+}
+
+// Handle context menu click
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== 'it-translator' || !info.selectionText) return
+  if (!info.selectionText) return;
 
-  // Open the side panel
-  chrome.sidePanel.open({ tabId: tab.id });
-
-  // Send message to side panel (wait a bit for it to load if it's the first time)
-  // In a real app, we'd wait for a 'ready' signal from the side panel
-  setTimeout(() => {
-    chrome.runtime.sendMessage({
-      type: 'TRANSLATE_TEXT',
-      text: info.selectionText,
-      context: '' // Context extraction could be done here or in content script
-    }).catch(err => console.log('Side panel not ready yet, retrying...'));
-  }, 500);
+  if (info.menuItemId === 'it-translator') {
+    console.log('[Background] Context menu click: it-translator for text:', info.selectionText);
+    // Save request to storage immediately
+    chrome.storage.local.set({ 
+      pendingTranslation: { 
+        text: info.selectionText, 
+        context: '', 
+        target_lang: 'auto',
+        timestamp: Date.now() 
+      } 
+    });
+    // Open the side panel
+    chrome.sidePanel.open({ tabId: tab.id });
+  } else if (info.menuItemId === 'it-explainer') {
+    console.log('[Background] Context menu click: it-explainer for text:', info.selectionText);
+    // Try to send explain command to content script of the active tab
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'TRIGGER_EXPLAIN_FROM_CONTEXT',
+      text: info.selectionText
+    }, (response) => {
+      // Check if message failed (e.g., content script not injected in PDF view or restricted page)
+      if (chrome.runtime.lastError) {
+        console.log('[Background] Content script not loaded on this tab (e.g. PDF view, chrome:// page). Falling back to Side Panel for explanation.');
+        // Save explain task to storage
+        chrome.storage.local.set({ 
+          pendingTranslation: { 
+            text: info.selectionText, 
+            context: '', 
+            target_lang: 'explain',
+            timestamp: Date.now() 
+          } 
+        });
+        // Open the side panel
+        chrome.sidePanel.open({ tabId: tab.id });
+      }
+    });
+  }
 })
 
-/**
- * This function runs inside the page (injected by executeScript).
- * It replicates the same inline replace + tooltip logic as the content script.
- */
-function inlineTranslateSelection(baseUrl) {
-  const VI_PATTERN = /[àáảãạăắặẳẵâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/i
-
-  const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return
-
-  const range = selection.getRangeAt(0)
-  const originalText = range.toString().trim()
-  if (!originalText) return
-
-  // Extract surrounding context
-  const container = range.commonAncestorContainer
-  const parentEl = container.nodeType === Node.TEXT_NODE ? container.parentElement : container
-  const contextEl = parentEl.closest('p, section, article, li') || parentEl
-  const context = contextEl?.innerText?.slice(0, 600) || ''
-
-  // Show a brief loading indicator over the selection
-  const loadingSpan = document.createElement('span')
-  loadingSpan.style.cssText = 'border-bottom:2px dotted #6c63ff;opacity:0.6;'
-  loadingSpan.textContent = '⏳ ' + originalText
-  range.deleteContents()
-  range.insertNode(loadingSpan)
-  window.getSelection()?.removeAllRanges()
-
-  // Call the translation API
-  fetch(`${baseUrl}/api/translate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: originalText, context, target_lang: 'auto' }),
-  })
-    .then(r => r.json())
-    .then(({ translation }) => {
-      if (!translation) throw new Error('No translation returned')
-
-      // Build the inline span with tooltip
-      const span = document.createElement('span')
-      span.className = 'it-translated'
-      span.textContent = translation
-
-      const tooltip = document.createElement('span')
-      tooltip.className = 'it-tooltip'
-      tooltip.textContent = `Original: ${originalText}`
-      span.appendChild(tooltip)
-
-      loadingSpan.replaceWith(span)
-    })
-    .catch(err => {
-      // Restore original text on failure
-      const restored = document.createTextNode(originalText)
-      loadingSpan.replaceWith(restored)
-      console.error('[IT Translator]', err.message)
-    })
-}
+// Handle keyboard shortcuts
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'translate-selection') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        // We need to inject a script to get the selection from the page
+        chrome.scripting.executeScript({
+          target: { tabId: tabs[0].id },
+          func: () => {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) return null;
+            const text = selection.toString().trim();
+            if (!text) return null;
+            
+            // Try to get context
+            const range = selection.getRangeAt(0);
+            const container = range.commonAncestorContainer;
+            const parentEl = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+            const contextEl = parentEl.closest('p, section, article, li') || parentEl;
+            const context = contextEl?.innerText?.slice(0, 600) || '';
+            
+            return { text, context };
+          }
+        }).then(results => {
+          const result = results[0].result;
+          if (result) {
+            chrome.storage.local.set({ 
+              pendingTranslation: { 
+                text: result.text, 
+                context: result.context, 
+                timestamp: Date.now() 
+              } 
+            });
+            chrome.sidePanel.open({ tabId: tabs[0].id });
+          }
+        });
+      }
+    });
+  } else if (command === 'translate-selection-to-english') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'TRIGGER_INLINE_TRANSLATION' });
+      }
+    });
+  }
+});

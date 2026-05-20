@@ -15,11 +15,11 @@ export async function checkStatus() {
  * @param {string} context
  * @param {'auto'|'vietnamese'|'english'} targetLang
  */
-export async function translateText(text, context = '', targetLang = 'auto') {
+export async function translateText(text, context = '', targetLang = 'auto', glossary = {}, glossaryMode = 'both') {
   const response = await fetch(`${BASE_URL}/api/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, context, target_lang: targetLang }),
+    body: JSON.stringify({ text, context, target_lang: targetLang, glossary, glossary_mode: glossaryMode }),
   })
   if (!response.ok) {
     const err = await response.json()

@@ -24,26 +24,55 @@ function initShadowDOM() {
 
   const style = document.createElement('style');
   style.textContent = `
-    .it-btn {
+    .it-float-menu {
       position: absolute;
-      padding: 6px 14px;
-      background: linear-gradient(135deg, #6c63ff, #8b5cf6);
-      color: #fff;
+      display: none;
+      gap: 6px;
+      z-index: 2147483647;
+      background: rgba(26, 26, 26, 0.95);
+      padding: 4px;
+      border-radius: 24px;
+      border: 1px solid #444;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      backdrop-filter: blur(8px);
+      align-items: center;
+    }
+    
+    .it-btn-item {
+      padding: 6px 12px;
+      background: transparent;
+      color: #efefef;
       font-family: 'Inter', sans-serif;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       border: none;
-      border-radius: 20px;
+      border-radius: 18px;
       cursor: pointer;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-      display: none;
+      transition: all 0.2s ease;
       white-space: nowrap;
-      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .it-btn-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    
+    .it-btn-item.primary {
+      background: #ffffff;
+      color: #000000;
+    }
+    
+    .it-btn-item.primary:hover {
+      background: #e5e5e5;
     }
 
     .it-box {
       position: absolute;
-      width: 420px;
+      width: 640px;
+      max-width: 90vw;
       background: #1a1a1a;
       color: #efefef;
       font-family: 'Inter', -apple-system, sans-serif;
@@ -123,22 +152,109 @@ function initShadowDOM() {
       display: inline-block;
       width: 2px;
       height: 15px;
-      background: #6c63ff;
+      background: #ffffff;
       margin-left: 2px;
       animation: it-blink 1s infinite;
     }
     @keyframes it-blink { 50% { opacity: 0; } }
+
+    .it-toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      background: rgba(26, 26, 26, 0.95);
+      color: #efefef;
+      border: 1px solid #444;
+      border-radius: 8px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      z-index: 2147483647;
+      animation: it-toast-in 0.3s ease-out;
+    }
+    @keyframes it-toast-in {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
   `;
   shadowRoot.appendChild(style);
 
-  // Floating Button
-  floatBtn = document.createElement('button');
-  floatBtn.className = 'it-btn';
-  floatBtn.textContent = '⚡ Translate';
-  floatBtn.onclick = (e) => {
-    e.stopPropagation();
-    onTranslateRequest();
+  // Floating Menu
+  floatBtn = document.createElement('div');
+  floatBtn.className = 'it-float-menu';
+
+  const ANTD_ICONS = {
+    thunderbolt: `<svg viewBox="64 64 896 896" focusable="false" width="13px" height="13px" fill="currentColor" style="display: inline-block; vertical-align: -0.125em; margin-right: 6px;"><path d="M848 359.3H627.7L825.8 109c4.1-5.3.2-13-6.5-13H702c-4 0-7.7 2-10 5.4L332 581.3c-4.6 6.1-.3 14.7 7.3 14.7h220.3L361.6 915c-4.1 5.3-.2 13 6.5 13h117.3c4 0 7.7-2 10-5.4l359.9-479.9c4.7-6.1.4-14.7-7.3-14.7z"></path></svg>`,
+    edit: `<svg viewBox="64 64 896 896" focusable="false" width="13px" height="13px" fill="currentColor" style="display: inline-block; vertical-align: -0.125em; margin-right: 6px;"><path d="M257.7 752c2 0 4-.2 6-.5L431.9 722c2-.4 3.9-1.3 5.3-2.8l423.9-423.9c3.9-3.9 3.9-10.2 0-14.1L694.7 114.7c-3.9-3.9-10.2-3.9-14.1 0L256.7 538.6c-1.5 1.5-2.4 3.4-2.8 5.3l-29.5 168.2a8 8 0 0 0 9.3 9.3l168.2-29.5c.2 0 .4.1.6.1zm251.6-491.9l122.8 122.8-378.2 378.2-122.8-122.8 378.2-378.2zm-283.7 385l90.7 90.7-119.7 21 29-111.7zM880 838H144c-17.7 0-32 14.3-32 32v36c0 4.4 3.6 8 8 8h752c4.4 0 8-3.6 8-8v-36c0-17.7-14.3-32-32-32z"></path></svg>`,
+    search: `<svg viewBox="64 64 896 896" focusable="false" width="13px" height="13px" fill="currentColor" style="display: inline-block; vertical-align: -0.125em; margin-right: 6px;"><path d="M909.6 854.5L747.4 692.3c47.9-60.1 76.8-136.1 76.8-218.7c0-187.7-152-339.7-339.7-339.7s-339.7 152-339.7 339.7s152 339.7 339.7 339.7c82.6 0 158.6-28.9 218.7-76.8l162.2 162.2c1.2 1.2 2.8 1.8 4.5 1.8s3.3-.7 4.5-1.8l40.3-40.3c2.4-2.4 2.4-6.6-.1-9zm-570.8-381c0-123.7 100.3-224 224-224s224 100.3 224 224s-100.3 224-224 224s-224-100.3-224-224z"></path></svg>`,
+    fileText: `<svg viewBox="64 64 896 896" focusable="false" width="13px" height="13px" fill="currentColor" style="display: inline-block; vertical-align: -0.125em; margin-right: 6px;"><path d="M854.6 288.6L658.8 92.8c-6-6-14.1-9.4-22.6-9.4H192c-17.7 0-32 14.3-32 32v832c0 17.7 14.3 32 32 32h640c17.7 0 32-14.3 32-32V311.3c0-8.5-3.4-16.6-9.4-22.7zM602 137.8L790.2 326H602V137.8zM792 886H232V148h290v210c0 17.7 14.3 32 32 32h238v496zM328 474h368c4.4 0 8-3.6 8-8v-36c0-4.4-3.6-8-8-8H328c-4.4 0-8 3.6-8 8v36c0 4.4 3.6 8 8 8zm0 144h368c4.4 0 8-3.6 8-8v-36c0-4.4-3.6-8-8-8H328c-4.4 0-8 3.6-8 8v36c0 4.4 3.6 8 8 8zm0 144h368c4.4 0 8-3.6 8-8v-36c0-4.4-3.6-8-8-8H328c-4.4 0-8 3.6-8 8v36c0 4.4 3.6 8 8 8z"></path></svg>`
   };
+
+  const translateBtn = document.createElement('button');
+  translateBtn.className = 'it-btn-item primary';
+  translateBtn.innerHTML = `${ANTD_ICONS.thunderbolt} Dịch (Translate)`;
+  translateBtn.onclick = (e) => {
+    e.stopPropagation();
+    onTranslateRequest('auto');
+  };
+
+  const reverseTranslateBtn = document.createElement('button');
+  reverseTranslateBtn.className = 'it-btn-item';
+  reverseTranslateBtn.innerHTML = `${ANTD_ICONS.edit} Dịch ngược (Translate to EN)`;
+  reverseTranslateBtn.onclick = (e) => {
+    e.stopPropagation();
+    hideBtn();
+    
+    // Check if the selection was inside an input or textarea
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+      const start = activeEl.selectionStart;
+      const end = activeEl.selectionEnd;
+      if (start !== end) {
+        const text = activeEl.value.substring(start, end).trim();
+        performInlineReplace(text, activeEl, true, start, end);
+        return;
+      }
+    }
+    
+    // Fallback to normal inline replace for contenteditable or text selection
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const text = selection.toString().trim();
+      const range = selection.getRangeAt(0);
+      const container = range.commonAncestorContainer;
+      const parentEl = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+      const isEditable = parentEl.closest('[contenteditable="true"]') !== null;
+      
+      if (isEditable) {
+        performInlineReplace(text, activeEl, false, 0, 0);
+      } else {
+        onTranslateRequest('english');
+      }
+    }
+  };
+
+  const explainBtn = document.createElement('button');
+  explainBtn.className = 'it-btn-item';
+  explainBtn.innerHTML = `${ANTD_ICONS.search} Giải thích (Explain)`;
+  explainBtn.onclick = (e) => {
+    e.stopPropagation();
+    onTranslateRequest('explain');
+  };
+
+  const summarizeBtn = document.createElement('button');
+  summarizeBtn.className = 'it-btn-item';
+  summarizeBtn.innerHTML = `${ANTD_ICONS.fileText} Tóm tắt (Summary)`;
+  summarizeBtn.onclick = (e) => {
+    e.stopPropagation();
+    onTranslateRequest('summarize');
+  };
+
+  floatBtn.appendChild(translateBtn);
+  floatBtn.appendChild(reverseTranslateBtn);
+  floatBtn.appendChild(explainBtn);
+  floatBtn.appendChild(summarizeBtn);
   shadowRoot.appendChild(floatBtn);
 
   // Overlay Box
@@ -153,9 +269,7 @@ function initShadowDOM() {
       </div>
     </div>
     <div class="it-body" id="content"></div>
-    <div class="it-footer">
-      <span>Gemma-2B Offline</span>
-      <span>J2TEAM Style</span>
+    <div class="it-footer" >
     </div>
   `;
   shadowRoot.appendChild(overlayBox);
@@ -172,14 +286,26 @@ function initShadowDOM() {
 
 function showBtn(range) {
   initShadowDOM();
+  
+  // Restore default button classes (Dịch is primary, others are normal)
+  const btns = floatBtn.querySelectorAll('.it-btn-item');
+  btns.forEach(btn => {
+    if (btn.textContent.includes('Dịch (Translate)')) {
+      btn.className = 'it-btn-item primary';
+    } else {
+      btn.className = 'it-btn-item';
+    }
+  });
+
   const rect = range.getBoundingClientRect();
   floatBtn.style.top = `${window.scrollY + rect.top - 45}px`;
-  floatBtn.style.left = `${window.scrollX + rect.left + rect.width / 2 - 50}px`;
-  floatBtn.style.display = 'block';
+  floatBtn.style.left = `${window.scrollX + rect.left + rect.width / 2 - 200}px`;
+  floatBtn.style.display = 'flex';
   savedRange = range.cloneRange();
 }
 
 function hideBtn() {
+  console.log('[ContentScript] Hiding floatBtn');
   if (floatBtn) floatBtn.style.display = 'none';
 }
 
@@ -187,12 +313,16 @@ function showBox(rect) {
   initShadowDOM();
   overlayBox.style.display = 'flex';
 
+  // Measure the box's actual width to allow responsive scaling (max-width: 90vw)
+  const boxWidth = overlayBox.offsetWidth || 640;
+  const halfWidth = boxWidth / 2;
+
   // Position box below selection
   let top = window.scrollY + rect.bottom + 15;
-  let left = window.scrollX + rect.left + rect.width / 2 - 210;
+  let left = window.scrollX + rect.left + rect.width / 2 - halfWidth; // Center under selection
 
-  // Clamp left
-  left = Math.max(20, Math.min(left, window.innerWidth - 440));
+  // Clamp left (avoid overflowing right edge of screen: boxWidth + 20px padding)
+  left = Math.max(20, Math.min(left, window.innerWidth - (boxWidth + 20)));
 
   // Flip to top if no space below
   if (top + 300 > window.scrollY + window.innerHeight) {
@@ -205,37 +335,111 @@ function showBox(rect) {
 }
 
 function hideBox() {
+  console.log('[ContentScript] Hiding overlayBox');
   if (overlayBox) overlayBox.style.display = 'none';
 }
 
-async function onTranslateRequest() {
-  if (!savedRange) return;
-  const text = savedRange.toString().trim();
-  const rect = savedRange.getBoundingClientRect();
-  const context = savedRange.commonAncestorContainer.parentElement.innerText.slice(0, 600);
+async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
+  let text = forcedText;
+  let context = '';
+  let rect = null;
+  
+  if (!text) {
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+      const start = activeEl.selectionStart;
+      const end = activeEl.selectionEnd;
+      if (start !== end) {
+        text = activeEl.value.substring(start, end).trim();
+        context = activeEl.value.slice(0, 1000);
+        rect = activeEl.getBoundingClientRect();
+      }
+    }
+    
+    if (!text && savedRange) {
+      text = savedRange.toString().trim();
+      context = savedRange.commonAncestorContainer.parentElement.innerText.slice(0, 600);
+      rect = savedRange.getBoundingClientRect();
+    }
+  } else {
+    // If text was forced (e.g. from context menu), try to get the active selection range for visual positioning
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      rect = selection.getRangeAt(0).getBoundingClientRect();
+    }
+  }
+
+  if (!text) return;
 
   hideBtn();
-  showBox(rect);
+  showBox(rect || { bottom: 200, left: 200, width: 100, top: 100 });
+
+  // Update dynamic title of the overlay box
+  const titleEl = overlayBox.querySelector('.it-title');
+  if (titleEl) {
+    if (targetLang === 'explain') {
+      titleEl.textContent = 'Giải thích thuật ngữ IT';
+    } else if (targetLang === 'summarize') {
+      titleEl.textContent = 'Tóm tắt nội dung';
+    } else if (targetLang === 'english') {
+      titleEl.textContent = 'Dịch ngược (Vietnamese to English)';
+    } else {
+      titleEl.textContent = 'Dịch thuật ngữ (Translate)';
+    }
+  }
 
   console.log('── IT Translator Request ──');
   console.log('Source Text:', text);
   console.log('Context:', context);
+  console.log('Target Lang:', targetLang);
   console.log('───────────────────────────');
 
-  chrome.runtime.sendMessage({
-    type: 'TRANSLATE_TEXT',
-    text: text,
-    context: context
-  });
+  if (targetLang === 'english' || targetLang === 'explain' || targetLang === 'summarize') {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: text, 
+          context: context, 
+          target_lang: targetLang,
+          glossary: {},
+          glossary_mode: 'both'
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        boxBody.innerText = data.translation;
+      } else {
+        boxBody.innerHTML = `<i style="color: #ff4a4a;">Lỗi ${targetLang === 'explain' ? 'giải thích thuật ngữ' : targetLang === 'summarize' ? 'tóm tắt' : 'dịch ngược'}.</i>`;
+      }
+    } catch (err) {
+      boxBody.innerHTML = '<i style="color: #ff4a4a;">Không kết nối được server.</i>';
+    }
+    return;
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    chrome.runtime.sendMessage({
+      type: 'TRANSLATE_TEXT',
+      text: text,
+      context: context
+    });
+  } else {
+    console.error('[ContentScript] chrome.runtime.sendMessage is not available. Extension context might be invalidated. Please refresh the page.');
+    boxBody.innerHTML = '<i style="color: #ff4a4a;">Lỗi: Extension đã được nạp lại hoặc mất kết nối. Vui lòng F5 (tải lại trang) để tiếp tục sử dụng.</i>';
+  }
 }
 
 // ── Message Listener ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'GENERATE_PROGRESS') {
+    console.log('[ContentScript] Received GENERATE_PROGRESS:', message.payload.partialText, 'done:', message.payload.done);
     if (overlayBox && overlayBox.style.display === 'flex') {
       const { partialText, done } = message.payload;
       if (boxBody.innerHTML === '<i>Processing...</i>') boxBody.innerHTML = '';
 
+      console.log('[ContentScript] Updating boxBody.innerText to:', partialText);
       boxBody.innerText = partialText;
 
       if (!done && !boxBody.querySelector('.it-cursor')) {
@@ -243,12 +447,265 @@ chrome.runtime.onMessage.addListener((message) => {
         cursor.className = 'it-cursor';
         boxBody.appendChild(cursor);
       } else if (done) {
+        console.log('[ContentScript] Generation done. Removing cursor.');
         const cursor = boxBody.querySelector('.it-cursor');
         if (cursor) cursor.remove();
       }
+    } else {
+      console.warn('[ContentScript] Box not visible, ignoring progress');
     }
   }
+
+  if (message.type === 'TRANSLATE_PAGE_CMD') {
+    console.log('[IT Translator] Message TRANSLATE_PAGE_CMD received in content script.');
+    translatePage();
+  }
+
+  if (message.type === 'TRIGGER_INLINE_TRANSLATION') {
+    console.log('[IT Translator] Message TRIGGER_INLINE_TRANSLATION received.');
+    triggerInlineTranslation();
+  }
+
+  if (message.type === 'TRIGGER_EXPLAIN_FROM_CONTEXT') {
+    console.log('[ContentScript] Received TRIGGER_EXPLAIN_FROM_CONTEXT message for text:', message.text);
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      savedRange = selection.getRangeAt(0);
+    }
+    onTranslateRequest('explain', message.text);
+  }
 });
+
+// ── Inline Translation & Replacement Helpers ─────────────────────────────────
+async function triggerInlineTranslation() {
+  const activeEl = document.activeElement;
+  let text = '';
+  let isInput = false;
+  let start = 0;
+  let end = 0;
+  
+  if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+    isInput = true;
+    start = activeEl.selectionStart;
+    end = activeEl.selectionEnd;
+    if (start !== end) {
+      text = activeEl.value.substring(start, end).trim();
+    }
+  } else {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      text = selection.toString().trim();
+    }
+  }
+  
+  if (!text) {
+    showToast("Vui lòng bôi đen văn bản tiếng Việt cần dịch ngược.");
+    return;
+  }
+  
+  await performInlineReplace(text, activeEl, isInput, start, end);
+}
+
+async function performInlineReplace(text, activeEl, isInput, start, end) {
+  if (isInput) {
+    const value = activeEl.value;
+    const loadingText = "...[Dịch: " + text.slice(0, 15) + "]...";
+    activeEl.value = value.substring(0, start) + loadingText + value.substring(end);
+    activeEl.selectionStart = start;
+    activeEl.selectionEnd = start + loadingText.length;
+    
+    try {
+      const glossaryResult = await new Promise(resolve => {
+        chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode'], resolve);
+      });
+      const enabled = glossaryResult.glossaryEnabled !== false;
+      const glossaryMode = glossaryResult.glossaryMode || 'both';
+      const glossary = enabled ? (glossaryResult.glossary || []) : [];
+      const glossaryDict = {};
+      glossary.forEach(g => {
+        if (g.term && g.meaning) glossaryDict[g.term] = g.meaning;
+      });
+
+      const response = await fetch('http://127.0.0.1:5000/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: text, 
+          context: '', 
+          target_lang: 'english',
+          glossary: glossaryDict,
+          glossary_mode: glossaryMode
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const translated = data.translation;
+        
+        const currentVal = activeEl.value;
+        const currentLoadingStart = currentVal.indexOf(loadingText);
+        if (currentLoadingStart !== -1) {
+          activeEl.value = currentVal.substring(0, currentLoadingStart) + translated + currentVal.substring(currentLoadingStart + loadingText.length);
+          activeEl.selectionStart = activeEl.selectionEnd = currentLoadingStart + translated.length;
+        } else {
+          activeEl.value = value.substring(0, start) + translated + value.substring(end);
+          activeEl.selectionStart = activeEl.selectionEnd = start + translated.length;
+        }
+        activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        activeEl.value = value;
+        showToast("Lỗi từ server dịch.");
+      }
+    } catch (err) {
+      activeEl.value = value;
+      showToast("Không kết nối được server.");
+    }
+  } else {
+    // Contenteditable or standard page replacement (if editable)
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    const parentEl = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+    const isEditable = parentEl.closest('[contenteditable="true"]') !== null;
+    
+    if (!isEditable) {
+      onTranslateRequest('english');
+      return;
+    }
+    
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: text, 
+          context: '', 
+          target_lang: 'english',
+          glossary: {},
+          glossary_mode: 'both'
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const translated = data.translation;
+        range.deleteContents();
+        const textNode = document.createTextNode(translated);
+        range.insertNode(textNode);
+        selection.removeAllRanges();
+        const newRange = document.createRange();
+        newRange.selectNodeContents(textNode);
+        newRange.collapse(false);
+        selection.addRange(newRange);
+      }
+    } catch (err) {
+      showToast("Lỗi dịch ngược contenteditable.");
+    }
+  }
+}
+
+function showToast(message) {
+  initShadowDOM();
+  const toast = document.createElement('div');
+  toast.className = 'it-toast';
+  toast.textContent = message;
+  shadowRoot.appendChild(toast);
+  setTimeout(() => {
+    toast.style.transition = 'opacity 0.3s';
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+async function translatePage() {
+  console.log('[IT Translator] Starting full page translation...');
+  
+  const textNodes = [];
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode: function(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      
+      const skipTags = ['SCRIPT', 'STYLE', 'CODE', 'PRE', 'NOSCRIPT', 'SVG', 'TEXTAREA'];
+      if (skipTags.includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+      
+      if (parent.closest('#it-translator-container')) return NodeFilter.FILTER_REJECT;
+      
+      const text = node.textContent.trim();
+      if (text.length < 5) return NodeFilter.FILTER_REJECT;
+      
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+
+  let node;
+  while (node = walk.nextNode()) {
+    textNodes.push(node);
+  }
+
+  console.log(`[IT Translator] Found ${textNodes.length} nodes.`);
+
+  if (textNodes.length === 0) {
+    console.log('[IT Translator] No valid text nodes found (text length may be too short or tags skipped).');
+    return;
+  }
+
+  // Đọc từ điển từ chrome.storage.local
+  const glossaryResult = await new Promise(resolve => {
+    chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode'], resolve);
+  });
+  
+  const enabled = glossaryResult.glossaryEnabled !== false;
+  const glossaryMode = glossaryResult.glossaryMode || 'both';
+  const glossary = enabled ? (glossaryResult.glossary || []) : [];
+  const glossaryDict = {};
+  
+  glossary.forEach(g => {
+    if (g.term && g.meaning) {
+      glossaryDict[g.term] = g.meaning;
+    }
+  });
+
+  console.log(`[IT Translator] Translating page. Glossary: Enabled=${enabled}, Mode=${glossaryMode}`);
+  if (enabled && glossary.length > 0) {
+    console.log(`[IT Translator] 📚 Từ điển hiện tại đang sử dụng:`, glossaryDict);
+  }
+
+  let successCount = 0;
+  for (let i = 0; i < textNodes.length; i++) {
+    const node = textNodes[i];
+    const originalText = node.textContent.trim();
+    console.log(`[IT Translator] Translating node ${i+1}/${textNodes.length}: "${originalText.slice(0, 30)}..."`);
+    
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: originalText, 
+          context: '', 
+          target_lang: 'auto',
+          glossary: glossaryDict,
+          glossary_mode: glossaryMode
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`[IT Translator] Success node ${i+1}`);
+        node.textContent = node.textContent.replace(originalText, data.translation);
+        successCount++;
+      } else {
+        console.error(`[IT Translator] API Error node ${i+1}: Status ${response.status}`);
+      }
+    } catch (err) {
+      console.error(`[IT Translator] Fetch Error node ${i+1}:`, err);
+    }
+  }
+  
+  console.log(`[IT Translator] Page translation complete. Success: ${successCount}/${textNodes.length}`);
+}
 
 // ── Selection Detection ───────────────────────────────────────────────────────
 document.addEventListener('mouseup', (e) => {
@@ -256,6 +713,26 @@ document.addEventListener('mouseup', (e) => {
   if (document.getElementById(CONTAINER_ID)?.contains(e.target)) return;
 
   setTimeout(() => {
+    // Check if bôi đen inside an input or textarea
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+      const start = activeEl.selectionStart;
+      const end = activeEl.selectionEnd;
+      if (start !== end && (end - start) > 1) {
+        const text = activeEl.value.substring(start, end).trim();
+        if (text.length > 1) {
+          const rect = activeEl.getBoundingClientRect();
+          initShadowDOM();
+          floatBtn.style.top = `${window.scrollY + rect.top - 45}px`;
+          floatBtn.style.left = `${window.scrollX + rect.left + rect.width / 2 - 200}px`;
+          floatBtn.style.display = 'flex';
+          savedRange = null; // Mark that it is an input selection
+          return;
+        }
+      }
+    }
+
+    // Normal webpage text selection
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && selection.toString().trim().length > 2) {
       showBtn(selection.getRangeAt(0));
@@ -268,5 +745,55 @@ document.addEventListener('mousedown', (e) => {
   hideBtn();
   hideBox();
 });
+
+// ── Double Click to Explain Technical Term ──────────────────────────────────
+document.addEventListener('dblclick', (e) => {
+  if (document.getElementById(CONTAINER_ID)?.contains(e.target)) return;
+
+  setTimeout(() => {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      const text = selection.toString().trim();
+      // Check if it looks like a technical word (single word, between 2 and 30 characters)
+      if (text.length >= 2 && text.length <= 30 && !text.includes(' ') && !text.includes('\n')) {
+        showBtn(selection.getRangeAt(0));
+        // Highlight the Explain button by making it primary!
+        initShadowDOM();
+        const btns = floatBtn.querySelectorAll('.it-btn-item');
+        btns.forEach(btn => {
+          if (btn.textContent.includes('Giải thích')) {
+            btn.className = 'it-btn-item primary';
+          } else {
+            btn.className = 'it-btn-item';
+          }
+        });
+      }
+    }
+  }, 60);
+});
+
+// ── Auto Web Translation Startup Check ───────────────────────────────────────
+if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+  chrome.storage.local.get(['autoTranslateUrl'], (result) => {
+    if (result.autoTranslateUrl) {
+      const currentUrl = window.location.href.toLowerCase();
+      const targetUrl = result.autoTranslateUrl.toLowerCase();
+      
+      // Clean URLs to compare domains and paths reliably
+      const cleanCurrent = currentUrl.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+      const cleanTarget = targetUrl.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+      
+      if (cleanCurrent.startsWith(cleanTarget) || cleanTarget.startsWith(cleanCurrent)) {
+        console.log('[IT Translator] Matches autoTranslateUrl, triggering full page translation...');
+        chrome.storage.local.remove(['autoTranslateUrl']);
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          setTimeout(translatePage, 1000);
+        } else {
+          window.addEventListener('load', () => setTimeout(translatePage, 1000));
+        }
+      }
+    }
+  });
+}
 
 console.log('[IT Translator] Shadow DOM Content Script Ready.');

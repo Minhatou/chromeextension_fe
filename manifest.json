@@ -41,5 +41,29 @@
                 "src/content_script/index.js"
             ]
         }
+    ],
+    "commands": {
+        "translate-selection": {
+            "suggested_key": {
+                "default": "Alt+Shift+T"
+            },
+            "description": "Translate the selected text instantly"
+        },
+        "translate-selection-to-english": {
+            "suggested_key": {
+                "default": "Alt+Shift+E"
+            },
+            "description": "Translate the selected text into English inline"
+        }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "src/dashboard/index.html"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
     ]
 }

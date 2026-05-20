@@ -9,6 +9,7 @@ const SidePanel = () => {
   const [sourceText, setSourceText] = useState('');
   const [translation, setTranslation] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
+  const [inferenceMode, setInferenceMode] = useState('local'); // 'local' or 'api'
   
   const sandboxRef = useRef(null);
   const [isSandboxReady, setIsSandboxReady] = useState(false);
@@ -23,12 +24,54 @@ const SidePanel = () => {
   useEffect(() => {
     const messageListener = (message) => {
       if (message.type === 'TRANSLATE_TEXT') {
-        handleTranslate(message.text, message.context);
+        if (isLoaded) {
+          handleTranslate(message.text, message.context);
+        } else {
+          // If not loaded, save as pending so it can be picked up once ready
+          chrome.storage.local.set({ 
+            pendingTranslation: { 
+              text: message.text, 
+              context: message.context, 
+              timestamp: Date.now() 
+            } 
+          });
+        }
       }
     };
     chrome.runtime.onMessage.addListener(messageListener);
     return () => chrome.runtime.onMessage.removeListener(messageListener);
   }, [isLoaded]);
+
+  // Check for pending translation when model becomes ready
+  useEffect(() => {
+    if (isLoaded || inferenceMode === 'api') {
+      chrome.storage.local.get(['pendingTranslation'], (data) => {
+        if (data.pendingTranslation) {
+          const { text, context, target_lang, timestamp } = data.pendingTranslation;
+          // Only process if it's recent (less than 1 minute old)
+          if (Date.now() - timestamp < 60000) {
+            handleTranslate(text, context, target_lang || 'auto');
+          }
+          chrome.storage.local.remove('pendingTranslation');
+        }
+      });
+    }
+  }, [isLoaded, inferenceMode]);
+
+  // Listen for new translations when side panel is already open
+  useEffect(() => {
+    const handleStorageChange = (changes, areaName) => {
+      if (areaName === 'local' && changes.pendingTranslation && changes.pendingTranslation.newValue) {
+        const { text, context, target_lang, timestamp } = changes.pendingTranslation.newValue;
+        if ((isLoaded || inferenceMode === 'api') && Date.now() - timestamp < 60000) {
+          handleTranslate(text, context, target_lang || 'auto');
+          chrome.storage.local.remove('pendingTranslation');
+        }
+      }
+    };
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+  }, [isLoaded, inferenceMode]);
 
   const currentTranslation = useRef('');
 
@@ -42,10 +85,12 @@ const SidePanel = () => {
         setStatus('Ready');
         setIsLoaded(true);
       } else if (type === 'GENERATE_PROGRESS') {
+        console.log('[SidePanel] Received GENERATE_PROGRESS:', payload.partialText, 'done:', payload.done);
         currentTranslation.current += payload.partialText;
         setTranslation(currentTranslation.current);
         
         // Broadcast to Content Script
+        console.log('[SidePanel] Broadcasting to content script...');
         chrome.runtime.sendMessage({
           type: 'GENERATE_PROGRESS',
           payload: { 
@@ -55,8 +100,7 @@ const SidePanel = () => {
         });
 
         if (payload.done) {
-          console.log('[SidePanel] Finished.');
-          console.log('[SidePanel] Final Translation:', currentTranslation.current);
+          console.log('[SidePanel] Finished. Final:', currentTranslation.current);
           setIsTranslating(false);
         }
       } else if (type === 'ERROR') {
@@ -93,7 +137,21 @@ const SidePanel = () => {
   const handleSandboxLoad = () => {
     console.log('[SidePanel] Sandbox iframe loaded.');
     setIsSandboxReady(true);
-    loadModel();
+    
+    chrome.storage.local.get(['inferenceMode'], (data) => {
+      const mode = data.inferenceMode || 'local';
+      setInferenceMode(mode);
+      
+      if (mode === 'local') {
+        loadModel();
+      } else {
+        setStatus('API Mode Active');
+        sandboxRef.current.contentWindow.postMessage({
+          type: 'SET_MODE',
+          payload: { mode: 'api' }
+        }, '*');
+      }
+    });
   };
 
   const handleFileSelect = async (e) => {
@@ -119,8 +177,8 @@ const SidePanel = () => {
     }
   };
 
-  const handleTranslate = async (text, context = '') => {
-    if (!isLoaded || !isSandboxReady) return;
+  const handleTranslate = async (text, context = '', targetLang = 'auto') => {
+    if ((inferenceMode === 'local' && !isLoaded) || !isSandboxReady) return;
     setSourceText(text);
     setTranslation('');
     currentTranslation.current = ''; // Reset accumulation
@@ -128,7 +186,7 @@ const SidePanel = () => {
 
     sandboxRef.current.contentWindow.postMessage({
       type: 'GENERATE',
-      payload: { text, context }
+      payload: { text, context, target_lang: targetLang }
     }, '*');
   };
 
@@ -136,6 +194,22 @@ const SidePanel = () => {
     if (confirm('Clear model from storage?')) {
       await clearModel();
       window.location.reload();
+    }
+  };
+
+  const toggleMode = () => {
+    const newMode = inferenceMode === 'local' ? 'api' : 'local';
+    setInferenceMode(newMode);
+    
+    chrome.storage.local.set({ inferenceMode: newMode });
+    
+    sandboxRef.current.contentWindow.postMessage({
+      type: 'SET_MODE',
+      payload: { mode: newMode }
+    }, '*');
+    
+    if (newMode === 'local' && !isLoaded) {
+      loadModel();
     }
   };
 
@@ -150,14 +224,33 @@ const SidePanel = () => {
       />
 
       <header>
-        <h1>IT Translator</h1>
-        <div className={`status-badge ${isLoaded ? 'ready' : error ? 'error' : 'loading'}`}>
-          {status} {!isLoaded && progress > 0 && progress < 100 && `${progress}%`}
+        <div className="header-top">
+          <h1>IT Translator</h1>
+          <div className="mode-selector">
+            <button 
+              className={`mode-btn ${inferenceMode === 'local' ? 'active' : ''}`}
+              onClick={() => inferenceMode !== 'local' && toggleMode()}
+              title="Run offline in browser"
+            >
+              Offline
+            </button>
+            <button 
+              className={`mode-btn ${inferenceMode === 'api' ? 'active' : ''}`}
+              onClick={() => inferenceMode !== 'api' && toggleMode()}
+              title="Use local LlamaFactory API"
+            >
+              API (Fine-tuned)
+            </button>
+          </div>
+        </div>
+        <div className={`status-badge ${isLoaded || inferenceMode === 'api' ? 'ready' : error ? 'error' : 'loading'}`}>
+          {inferenceMode === 'api' ? 'API Mode Active' : status} 
+          {inferenceMode === 'local' && !isLoaded && progress > 0 && progress < 100 && `${progress}%`}
         </div>
       </header>
 
       <main>
-        {!isLoaded ? (
+        {(!isLoaded && inferenceMode === 'local') ? (
           <div className="setup-view">
             {error ? (
               <div className="error-view">

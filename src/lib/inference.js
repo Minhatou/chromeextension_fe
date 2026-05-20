@@ -2,7 +2,12 @@ import { LlmInference, FilesetResolver } from '@mediapipe/tasks-genai';
 
 let llmInference = null;
 
-const SYSTEM_PROMPT = "You are an expert IT translator. Translate the following technical text into professional Vietnamese. Maintain technical terms where appropriate. Provide only the translation.";
+const SYSTEM_PROMPT = 
+  "Bạn là một biên dịch viên chuyên nghiệp về công nghệ thông tin. " +
+  "Nhiệm vụ của bạn là CHỈ dịch đoạn văn bản nằm trong khối [TEXT_TO_TRANSLATE] sang tiếng Việt (hoặc tiếng Anh nếu văn bản gốc là tiếng Việt). " +
+  "Khối [CONTEXT] được cung cấp CHỈ để giúp bạn hiểu rõ ngữ cảnh của từ ngữ hoặc các đại từ xưng hô, " +
+  "tuyệt đối KHÔNG được dịch các câu trong khối [CONTEXT] hay đưa bất kỳ nội dung nào từ [CONTEXT] vào kết quả đầu ra của bạn. " +
+  "Hãy CHỈ trả về bản dịch trực tiếp của văn bản trong khối [TEXT_TO_TRANSLATE], KHÔNG giải thích, không thêm tiêu đề, nhãn hay từ ngữ thừa nào khác.";
 
 export async function initInference(modelBlob) {
   if (llmInference) {
@@ -40,7 +45,7 @@ export async function generateTranslation(text, context = '') {
   }
 
   console.log('[Inference] Generating translation for text:', text.slice(0, 50), '...');
-  const fullPrompt = `${SYSTEM_PROMPT}\n\nContext: ${context}\n\nText to translate: ${text}\n\nTranslation:`;
+  const fullPrompt = `${SYSTEM_PROMPT}\n\n[CONTEXT]\n${context}\n[/CONTEXT]\n\n[TEXT_TO_TRANSLATE]\n${text}\n[/TEXT_TO_TRANSLATE]\n\nTranslation:`;
   
   const startTime = performance.now();
   const response = await llmInference.generateResponse(fullPrompt);
@@ -57,7 +62,7 @@ export async function generateTranslationStream(text, context = '', onPartialRes
   }
 
   console.log('[Inference] Starting streaming translation...');
-  const fullPrompt = `${SYSTEM_PROMPT}\n\nContext: ${context}\n\nText to translate: ${text}\n\nTranslation:`;
+  const fullPrompt = `${SYSTEM_PROMPT}\n\n[CONTEXT]\n${context}\n[/CONTEXT]\n\n[TEXT_TO_TRANSLATE]\n${text}\n[/TEXT_TO_TRANSLATE]\n\nTranslation:`;
   
   await llmInference.generateResponse(fullPrompt, (partialText, done) => {
     if (done) console.log('[Inference] Stream complete.');

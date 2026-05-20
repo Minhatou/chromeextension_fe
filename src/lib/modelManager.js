@@ -2,8 +2,10 @@ import { openDB } from 'idb';
 
 const DB_NAME = 'ModelDatabase';
 const STORE_NAME = 'models';
-const MODEL_KEY = 'gemma-2b-it-gpu-int4';
-const DEFAULT_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/llm_inference/gemma-2b-it-gpu-int4.bin';
+const MODEL_KEY = 'gemma-7b-it-gpu-int4';
+// Gemma 7B is much smarter but larger (~5GB). 
+// Fallback to 2B if your hardware struggles: https://storage.googleapis.com/mediapipe-models/llm_inference/gemma-2b-it-gpu-int4.bin
+const DEFAULT_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/llm_inference/gemma-7b-it-gpu-int4.bin';
 
 function showNotification(title, message) {
   try {
