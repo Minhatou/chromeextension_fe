@@ -59,7 +59,8 @@
     "web_accessible_resources": [
         {
             "resources": [
-                "src/dashboard/index.html"
+                "src/dashboard/index.html",
+                "src/admin/index.html"
             ],
             "matches": [
                 "<all_urls>"

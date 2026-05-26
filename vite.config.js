@@ -11,7 +11,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        dashboard: 'src/dashboard/index.html'
+        dashboard: 'src/dashboard/index.html',
+        admin: 'src/admin/index.html'
       }
     }
   }

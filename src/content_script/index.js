@@ -177,6 +177,78 @@ function initShadowDOM() {
       from { transform: translateY(20px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
+
+    /* Markdown Styles */
+    .it-md-code {
+      background: #2b2b2b;
+      color: #ff7875;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.9em;
+    }
+    .it-md-pre {
+      background: #111;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 8px 0;
+      border: 1px solid #222;
+      white-space: pre;
+    }
+    .it-md-code-block {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      color: #efefef;
+    }
+    .it-box h1, .it-box h2, .it-box h3 {
+      margin-top: 12px;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .it-box ul, .it-box ol {
+      margin-top: 4px;
+      margin-bottom: 8px;
+      padding-left: 20px;
+    }
+
+    /* Light Theme Styles */
+    .it-box.light-theme {
+      background: #ffffff;
+      color: #1a1a1a;
+      border: 1px solid #ddd;
+      box-shadow: 0 15px 50px rgba(0,0,0,0.15);
+    }
+    .it-box.light-theme .it-header {
+      background: #f5f5f5;
+      border-bottom: 1px solid #ddd;
+    }
+    .it-box.light-theme .it-title {
+      color: #666;
+    }
+    .it-box.light-theme .it-action-btn {
+      background: #e5e5e5;
+      color: #333;
+    }
+    .it-box.light-theme .it-action-btn:hover {
+      background: #d5d5d5;
+      color: #000;
+    }
+    .it-box.light-theme .it-footer {
+      background: #fafafa;
+      border-top: 1px solid #eee;
+    }
+    .it-box.light-theme .it-md-code {
+      background: #f0f0f0;
+      color: #c41d7f;
+    }
+    .it-box.light-theme .it-md-pre {
+      background: #f7f7f7;
+      border: 1px solid #e8e8e8;
+    }
+    .it-box.light-theme .it-md-code-block {
+      color: #1a1a1a;
+    }
   `;
   shadowRoot.appendChild(style);
 
@@ -199,41 +271,7 @@ function initShadowDOM() {
     onTranslateRequest('auto');
   };
 
-  const reverseTranslateBtn = document.createElement('button');
-  reverseTranslateBtn.className = 'it-btn-item';
-  reverseTranslateBtn.innerHTML = `${ANTD_ICONS.edit} Dịch ngược (Translate to EN)`;
-  reverseTranslateBtn.onclick = (e) => {
-    e.stopPropagation();
-    hideBtn();
-    
-    // Check if the selection was inside an input or textarea
-    const activeEl = document.activeElement;
-    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-      const start = activeEl.selectionStart;
-      const end = activeEl.selectionEnd;
-      if (start !== end) {
-        const text = activeEl.value.substring(start, end).trim();
-        performInlineReplace(text, activeEl, true, start, end);
-        return;
-      }
-    }
-    
-    // Fallback to normal inline replace for contenteditable or text selection
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      const text = selection.toString().trim();
-      const range = selection.getRangeAt(0);
-      const container = range.commonAncestorContainer;
-      const parentEl = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
-      const isEditable = parentEl.closest('[contenteditable="true"]') !== null;
-      
-      if (isEditable) {
-        performInlineReplace(text, activeEl, false, 0, 0);
-      } else {
-        onTranslateRequest('english');
-      }
-    }
-  };
+  // reverseTranslateBtn is intentionally hidden — auto-detection handles VI→EN
 
   const explainBtn = document.createElement('button');
   explainBtn.className = 'it-btn-item';
@@ -252,7 +290,6 @@ function initShadowDOM() {
   };
 
   floatBtn.appendChild(translateBtn);
-  floatBtn.appendChild(reverseTranslateBtn);
   floatBtn.appendChild(explainBtn);
   floatBtn.appendChild(summarizeBtn);
   shadowRoot.appendChild(floatBtn);
@@ -264,6 +301,7 @@ function initShadowDOM() {
     <div class="it-header">
       <div class="it-title">Translate Selection</div>
       <div class="it-controls">
+        <button class="it-action-btn" id="theme-toggle">Light Mode</button>
         <button class="it-action-btn" id="copy">Copy</button>
         <button class="it-action-btn" id="close">Close</button>
       </div>
@@ -282,24 +320,30 @@ function initShadowDOM() {
     btn.textContent = 'Copied!';
     setTimeout(() => btn.textContent = 'Copy', 2000);
   };
+
+  const themeBtn = overlayBox.querySelector('#theme-toggle');
+  themeBtn.onclick = () => {
+    overlayBox.classList.toggle('light-theme');
+    if (overlayBox.classList.contains('light-theme')) {
+      themeBtn.textContent = 'Dark Mode';
+    } else {
+      themeBtn.textContent = 'Light Mode';
+    }
+  };
 }
 
 function showBtn(range) {
   initShadowDOM();
   
-  // Restore default button classes (Dịch is primary, others are normal)
+  // Restore default button classes (Translate is primary, others are normal)
   const btns = floatBtn.querySelectorAll('.it-btn-item');
-  btns.forEach(btn => {
-    if (btn.textContent.includes('Dịch (Translate)')) {
-      btn.className = 'it-btn-item primary';
-    } else {
-      btn.className = 'it-btn-item';
-    }
+  btns.forEach((btn, idx) => {
+    btn.className = idx === 0 ? 'it-btn-item primary' : 'it-btn-item';
   });
 
   const rect = range.getBoundingClientRect();
   floatBtn.style.top = `${window.scrollY + rect.top - 45}px`;
-  floatBtn.style.left = `${window.scrollX + rect.left + rect.width / 2 - 200}px`;
+  floatBtn.style.left = `${window.scrollX + rect.left + rect.width / 2 - 160}px`;
   floatBtn.style.display = 'flex';
   savedRange = range.cloneRange();
 }
@@ -339,6 +383,16 @@ function hideBox() {
   if (overlayBox) overlayBox.style.display = 'none';
 }
 
+// Simple heuristic: checks if text is predominantly Vietnamese
+// Vietnamese uses Latin script + diacritics; a quick check for common VI characters is sufficient.
+function isVietnamese(text) {
+  // Vietnamese-specific characters (unique diacritics not found in other Latin languages)
+  const viPattern = /[àáâãèéêìíòóôõùúýăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỷỹỵÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲÝỶỸỴ]/;
+  const matches = (text.match(/[àáâãèéêìíòóôõùúýăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỷỹỵÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝĂĐƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲÝỶỸỴ]/g) || []).length;
+  // If >5% of characters are Vietnamese-specific diacritics, consider it Vietnamese
+  return matches > 0 && (matches / text.replace(/\s/g, '').length) > 0.05;
+}
+
 async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
   let text = forcedText;
   let context = '';
@@ -371,6 +425,12 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
 
   if (!text) return;
 
+  // Auto-detect Vietnamese: if 'auto' mode and text is Vietnamese, translate to English
+  if (targetLang === 'auto' && isVietnamese(text)) {
+    targetLang = 'english';
+    console.log('[IT Translator] Vietnamese text detected — switching target to English.');
+  }
+
   hideBtn();
   showBox(rect || { bottom: 200, left: 200, width: 100, top: 100 });
 
@@ -382,7 +442,7 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
     } else if (targetLang === 'summarize') {
       titleEl.textContent = 'Tóm tắt nội dung';
     } else if (targetLang === 'english') {
-      titleEl.textContent = 'Dịch ngược (Vietnamese to English)';
+      titleEl.textContent = 'Dịch ngược (Vietnamese → English)';
     } else {
       titleEl.textContent = 'Dịch thuật ngữ (Translate)';
     }
@@ -409,7 +469,7 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
       });
       if (response.ok) {
         const data = await response.json();
-        boxBody.innerText = data.translation;
+        boxBody.innerHTML = renderMarkdown(data.translation);
       } else {
         boxBody.innerHTML = `<i style="color: #ff4a4a;">Lỗi ${targetLang === 'explain' ? 'giải thích thuật ngữ' : targetLang === 'summarize' ? 'tóm tắt' : 'dịch ngược'}.</i>`;
       }
@@ -439,17 +499,13 @@ chrome.runtime.onMessage.addListener((message) => {
       const { partialText, done } = message.payload;
       if (boxBody.innerHTML === '<i>Processing...</i>') boxBody.innerHTML = '';
 
-      console.log('[ContentScript] Updating boxBody.innerText to:', partialText);
-      boxBody.innerText = partialText;
+      console.log('[ContentScript] Updating boxBody.innerHTML to rendered markdown');
+      boxBody.innerHTML = renderMarkdown(partialText);
 
-      if (!done && !boxBody.querySelector('.it-cursor')) {
+      if (!done) {
         const cursor = document.createElement('span');
         cursor.className = 'it-cursor';
         boxBody.appendChild(cursor);
-      } else if (done) {
-        console.log('[ContentScript] Generation done. Removing cursor.');
-        const cursor = boxBody.querySelector('.it-cursor');
-        if (cursor) cursor.remove();
       }
     } else {
       console.warn('[ContentScript] Box not visible, ignoring progress');
@@ -761,7 +817,7 @@ document.addEventListener('dblclick', (e) => {
         initShadowDOM();
         const btns = floatBtn.querySelectorAll('.it-btn-item');
         btns.forEach(btn => {
-          if (btn.textContent.includes('Giải thích')) {
+          if (btn.innerHTML.includes('Giải thích')) {
             btn.className = 'it-btn-item primary';
           } else {
             btn.className = 'it-btn-item';

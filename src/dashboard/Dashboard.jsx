@@ -3,13 +3,14 @@ import './Dashboard.css';
 import { translateText } from '../api/translationClient';
 import { loginWithEmail, registerWithEmail, logout, getSession } from '../api/authClient';
 import { createWorker } from 'tesseract.js';
-import { 
-  SunOutlined, MoonOutlined, 
+import {
+  SunOutlined, MoonOutlined,
   MenuOutlined, ThunderboltFilled, SettingOutlined, AppstoreOutlined,
   FileTextOutlined, PictureOutlined, FileOutlined, GlobalOutlined,
   SwapOutlined, AudioOutlined, FormOutlined, SoundOutlined,
   CopyOutlined, StarOutlined, LinkOutlined, HistoryOutlined,
-  BookOutlined, DeleteOutlined, PlusOutlined
+  BookOutlined, DeleteOutlined, PlusOutlined,
+  QuestionCircleOutlined, CompressOutlined
 } from '@ant-design/icons';
 
 export default function Dashboard() {
@@ -17,11 +18,19 @@ export default function Dashboard() {
   const [outputText, setOutputText] = useState('');
   const [sourceLang, setSourceLang] = useState('Anh');
   const [targetLang, setTargetLang] = useState('Việt');
-  const [currentMode, setCurrentMode] = useState('text'); // 'text' | 'image' | 'doc' | 'web'
+  const [currentMode, setCurrentMode] = useState('text'); // 'text' | 'image' | 'doc' | 'web' | 'explain' | 'summarize'
   const [webUrl, setWebUrl] = useState('');
   const [activeFooterTab, setActiveFooterTab] = useState(null); // null | 'history' | 'saved'
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
-  
+
+  // Explain & Summarize States
+  const [explainInput, setExplainInput] = useState('');
+  const [explainOutput, setExplainOutput] = useState('');
+  const [isExplaining, setIsExplaining] = useState(false);
+  const [summarizeInput, setSummarizeInput] = useState('');
+  const [summarizeOutput, setSummarizeOutput] = useState('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
+
   // Auth States
   const [session, setSession] = useState(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -30,7 +39,7 @@ export default function Dashboard() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
-  
+
   // Settings States
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [glossaryEnabled, setGlossaryEnabled] = useState(true);
@@ -49,7 +58,7 @@ export default function Dashboard() {
     }
     return localStorage.getItem('theme') || 'light';
   });
-  
+
   const [stats, setStats] = useState({
     wordsTranslated: 1250,
     savedTerms: 45,
@@ -151,15 +160,15 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid })
       })
-      .then(r => r.json())
-      .then(data => {
-        console.log("[Glossary] Fetched data:", data);
-        if (data.glossary) {
-          setSavedVocabulary(data.glossary);
-          setStats(prev => ({ ...prev, savedTerms: data.glossary.length }));
-        }
-      })
-      .catch(err => console.error("[Glossary] Fetch error:", err));
+        .then(r => r.json())
+        .then(data => {
+          console.log("[Glossary] Fetched data:", data);
+          if (data.glossary) {
+            setSavedVocabulary(data.glossary);
+            setStats(prev => ({ ...prev, savedTerms: data.glossary.length }));
+          }
+        })
+        .catch(err => console.error("[Glossary] Fetch error:", err));
 
       console.log("[History] Fetching from Firestore for user:", session.uid);
       fetch('http://127.0.0.1:5000/api/history', {
@@ -167,13 +176,13 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid })
       })
-      .then(r => r.json())
-      .then(data => {
-        if (data.history) {
-          setRecentTranslations(data.history);
-        }
-      })
-      .catch(err => console.error("[History] Fetch error:", err));
+        .then(r => r.json())
+        .then(data => {
+          if (data.history) {
+            setRecentTranslations(data.history);
+          }
+        })
+        .catch(err => console.error("[History] Fetch error:", err));
     }
   }, [session]);
 
@@ -206,7 +215,7 @@ export default function Dashboard() {
 
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get([
-        'glossary', 
+        'glossary',
         'translationHistory',
         'glossaryEnabled',
         'glossaryMode',
@@ -220,7 +229,7 @@ export default function Dashboard() {
           chrome.storage.local.set({ glossary: defaults });
           setStats(prev => ({ ...prev, savedTerms: defaults.length }));
         }
-        
+
         if (result.translationHistory) {
           setRecentTranslations(result.translationHistory);
         }
@@ -243,7 +252,7 @@ export default function Dashboard() {
       const localEnabled = localStorage.getItem('glossaryEnabled');
       const localMode = localStorage.getItem('glossaryMode');
       const localInf = localStorage.getItem('inferenceMode');
-      
+
       if (localGlossary) {
         const parsed = JSON.parse(localGlossary);
         setSavedVocabulary(parsed);
@@ -253,7 +262,7 @@ export default function Dashboard() {
         localStorage.setItem('glossary', JSON.stringify(defaults));
         setStats(prev => ({ ...prev, savedTerms: defaults.length }));
       }
-      
+
       if (localHistory) {
         setRecentTranslations(JSON.parse(localHistory));
       }
@@ -275,7 +284,7 @@ export default function Dashboard() {
     const timer = setTimeout(() => {
       if (inputText && outputText && outputText !== 'Đang dịch...' && !outputText.startsWith('Lỗi khi dịch')) {
         let isUpdate = false;
-        
+
         setRecentTranslations(prev => {
           const lastItem = prev[0];
           if (lastItem && (inputText.startsWith(lastItem.source) || lastItem.source.startsWith(inputText))) {
@@ -289,7 +298,7 @@ export default function Dashboard() {
             }
             return updated;
           }
-          
+
           const newItem = { id: Date.now(), source: inputText, target: outputText, time: "Vừa xong" };
           const updated = [newItem, ...prev].slice(0, 20);
           if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -297,7 +306,7 @@ export default function Dashboard() {
           } else {
             localStorage.setItem('translationHistory', JSON.stringify(updated));
           }
-          
+
           if (session && session.uid && !isUpdate) {
             console.log("[History] Saving new translation to Firestore for user:", session.uid);
             fetch('http://127.0.0.1:5000/api/history/add', {
@@ -306,7 +315,7 @@ export default function Dashboard() {
               body: JSON.stringify({ uid: session.uid, source: inputText, target: outputText, time: "Vừa xong" })
             }).catch(console.error);
           }
-          
+
           return updated;
         });
       }
@@ -314,6 +323,26 @@ export default function Dashboard() {
 
     return () => clearTimeout(timer);
   }, [inputText, outputText, session]);
+
+  // Auto-trigger explain when in explain mode and user stops typing (1.5s debounce)
+  useEffect(() => {
+    if (currentMode !== 'explain' || !explainInput.trim()) return;
+    const timer = setTimeout(() => {
+      handleExplain(explainInput);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [explainInput, currentMode]);
+
+  // Auto-trigger summarize when in summarize mode and user stops typing (1.5s debounce)
+  useEffect(() => {
+    if (currentMode !== 'summarize' || !summarizeInput.trim()) return;
+    const timer = setTimeout(() => {
+      handleSummarize(summarizeInput);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [summarizeInput, currentMode]);
+
+
 
   const addTerm = () => {
     setNewTerm('');
@@ -327,7 +356,7 @@ export default function Dashboard() {
       alert("Vui lòng nhập đầy đủ từ tiếng Anh và nghĩa tiếng Việt!");
       return;
     }
-    
+
     // Check for duplicate
     const exists = savedVocabulary.some(item => item.term.toLowerCase() === newTerm.trim().toLowerCase());
     if (exists) {
@@ -366,7 +395,7 @@ export default function Dashboard() {
       const newVocab = [...savedVocabulary, newEntry];
       setSavedVocabulary(newVocab);
       setStats(prev => ({ ...prev, savedTerms: newVocab.length }));
-      
+
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.set({ glossary: newVocab });
       } else {
@@ -421,7 +450,7 @@ export default function Dashboard() {
         console.error("Failed to clear history on Firestore", err);
       }
     }
-    
+
     setRecentTranslations([]);
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.set({ translationHistory: [] });
@@ -454,19 +483,19 @@ export default function Dashboard() {
             meaning: item.meaning,
             context: item.context || "Nhập khẩu"
           }));
-          
+
           if (valid.length === 0) {
             alert("Không tìm thấy dữ liệu hợp lệ trong file!");
             return;
           }
-          
+
           const newVocab = [...savedVocabulary];
           valid.forEach(v => {
             if (!newVocab.some(existing => existing.term.toLowerCase() === v.term.toLowerCase())) {
               newVocab.push(v);
             }
           });
-          
+
           setSavedVocabulary(newVocab);
           setStats(prev => ({ ...prev, savedTerms: newVocab.length }));
           if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -492,10 +521,10 @@ export default function Dashboard() {
       setOutputText('');
       return;
     }
-    
+
     try {
       setOutputText('Đang dịch...');
-      
+
       // Convert savedVocabulary array of objects to key-value dict if enabled
       const glossaryDict = {};
       const matchedTerms = [];
@@ -509,7 +538,7 @@ export default function Dashboard() {
           }
         });
       }
-      
+
       console.log(`[Dashboard] Translating text. Glossary: Enabled=${glossaryEnabled}, Mode=${glossaryMode}`);
       if (glossaryEnabled) {
         console.log(`[Dashboard] 📚 Từ điển hiện tại đang sử dụng:`, glossaryDict);
@@ -519,7 +548,7 @@ export default function Dashboard() {
       } else if (glossaryEnabled) {
         console.log(`[Dashboard] ℹ️ Không khớp thuật ngữ nào trong từ điển hiện tại.`);
       }
-      
+
       const result = await translateText(text, '', 'auto', glossaryDict, glossaryMode);
       console.log('[Dashboard] Translation result:', result);
       setOutputText(result.translation || 'Không nhận được bản dịch');
@@ -529,15 +558,63 @@ export default function Dashboard() {
     }
   };
 
+  const handleExplain = async (text) => {
+    setExplainInput(text);
+    if (!text.trim()) { setExplainOutput(''); return; }
+    setIsExplaining(true);
+    setExplainOutput('Đang giải thích...');
+    try {
+      const res = await fetch('http://127.0.0.1:5000/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, context: '', target_lang: 'explain', glossary: {}, glossary_mode: 'both' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setExplainOutput(data.translation || 'Không có kết quả.');
+      } else {
+        setExplainOutput('Lỗi từ máy chủ.');
+      }
+    } catch (err) {
+      setExplainOutput('Không kết nối được máy chủ.');
+    } finally {
+      setIsExplaining(false);
+    }
+  };
+
+  const handleSummarize = async (text) => {
+    setSummarizeInput(text);
+    if (!text.trim()) { setSummarizeOutput(''); return; }
+    setIsSummarizing(true);
+    setSummarizeOutput('Đang tóm tắt...');
+    try {
+      const res = await fetch('http://127.0.0.1:5000/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, context: '', target_lang: 'summarize', glossary: {}, glossary_mode: 'both' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSummarizeOutput(data.translation || 'Không có kết quả.');
+      } else {
+        setSummarizeOutput('Lỗi từ máy chủ.');
+      }
+    } catch (err) {
+      setSummarizeOutput('Không kết nối được máy chủ.');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
   const handleSpeak = () => {
     if (!outputText) return;
-    
+
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(outputText);
-    
+
     const voices = window.speechSynthesis.getVoices();
-    const vnVoice = voices.find(voice => voice.name.includes('Google') && voice.lang === 'vi-VN') 
-                  || voices.find(voice => voice.lang === 'vi-VN');
+    const vnVoice = voices.find(voice => voice.name.includes('Google') && voice.lang === 'vi-VN')
+      || voices.find(voice => voice.lang === 'vi-VN');
 
     if (vnVoice) {
       utterance.voice = vnVoice;
@@ -550,7 +627,7 @@ export default function Dashboard() {
 
   const handleSaveToGlossary = async () => {
     if (!inputText || !outputText) return;
-    
+
     // Check if already exists
     const exists = savedVocabulary.some(item => item.term === inputText && item.meaning === outputText);
     if (exists) {
@@ -581,16 +658,16 @@ export default function Dashboard() {
         alert("Lỗi kết nối máy chủ");
       }
     } else {
-      const newVocab = [...savedVocabulary, { 
-        id: Date.now(), 
-        term: inputText, 
-        meaning: outputText, 
-        context: "Từ bản dịch" 
+      const newVocab = [...savedVocabulary, {
+        id: Date.now(),
+        term: inputText,
+        meaning: outputText,
+        context: "Từ bản dịch"
       }];
-      
+
       setSavedVocabulary(newVocab);
       setStats(prev => ({ ...prev, savedTerms: newVocab.length }));
-      
+
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.set({ glossary: newVocab });
       } else {
@@ -623,28 +700,28 @@ export default function Dashboard() {
 
     setIsProcessingOCR(true);
     setInputText('Đang trích xuất chữ từ ảnh...');
-    
+
     try {
       console.log('[OCR] Creating worker with langs: [\'eng\', \'vie\']');
       const worker = await createWorker(['eng', 'vie'], 1, {
-        workerPath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL 
-          ? chrome.runtime.getURL('worker.min.js') 
+        workerPath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
+          ? chrome.runtime.getURL('worker.min.js')
           : '/worker.min.js',
-        langPath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL 
-          ? chrome.runtime.getURL('lang-data/') 
-          : '/lang-data/', 
-        corePath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL 
-          ? chrome.runtime.getURL('tesseract-core.wasm.js') 
+        langPath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
+          ? chrome.runtime.getURL('lang-data/')
+          : '/lang-data/',
+        corePath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
+          ? chrome.runtime.getURL('tesseract-core.wasm.js')
           : '/tesseract-core.wasm.js',
         logger: m => console.log('[OCR Worker]', m)
       });
 
       console.log('[OCR] Worker created. Recognizing text...');
       const { data: { text } } = await worker.recognize(file);
-      
+
       console.log('[OCR] Recognition complete. Terminating worker...');
       await worker.terminate();
-      
+
       console.log('[OCR] Extracted Text:', text);
       setInputText(text);
       handleTranslate(text); // Trigger translation
@@ -677,12 +754,12 @@ export default function Dashboard() {
       alert("Vui lòng nhập địa chỉ website!");
       return;
     }
-    
+
     // Add http/https if missing
     if (!/^https?:\/\//i.test(targetUrl)) {
       targetUrl = 'https://' + targetUrl;
     }
-    
+
     try {
       new URL(targetUrl);
     } catch (e) {
@@ -712,7 +789,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="gt-header-right">
-          <button 
+          <button
             onClick={() => setInferenceMode(inferenceMode === 'api' ? 'local' : 'api')}
             style={{
               background: inferenceMode === 'api' ? '#18181b' : '#3b82f6',
@@ -728,15 +805,35 @@ export default function Dashboard() {
           </button>
           <button className="gt-icon-btn" title="Cài đặt" onClick={() => setIsSettingsOpen(true)}><SettingOutlined /></button>
           <button className="gt-icon-btn" title="Ứng dụng"><AppstoreOutlined /></button>
-          
+
+          {session?.role === 'admin' && (
+            <button
+              title="Trang quản trị"
+              onClick={() => {
+                const url = typeof chrome !== 'undefined' && chrome.runtime
+                  ? chrome.runtime.getURL('src/admin/index.html')
+                  : '/src/admin/index.html';
+                window.open(url, '_blank');
+              }}
+              style={{
+                background: '#18181b', color: '#fff', border: 'none',
+                padding: '6px 12px', borderRadius: '8px',
+                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '5px'
+              }}
+            >
+              ⚙ Admin
+            </button>
+          )}
+
           {session ? (
             <div className="gt-avatar" title={`Tài khoản: ${session.email}\nVai trò: ${session.role}`} onClick={handleLogout} style={{ cursor: 'pointer' }}>
               {session.email.substring(0, 2).toUpperCase()}
             </div>
           ) : (
-            <button 
-              className="gt-icon-btn" 
-              style={{ width: 'auto', padding: '0 12px', fontSize: '13px', fontWeight: 600, background: '#18181b', color: '#fff' }} 
+            <button
+              className="gt-icon-btn"
+              style={{ width: 'auto', padding: '0 12px', fontSize: '13px', fontWeight: 600, background: '#18181b', color: '#fff' }}
               onClick={() => setIsAuthModalOpen(true)}
             >
               Đăng nhập
@@ -749,30 +846,42 @@ export default function Dashboard() {
       <main className="gt-main">
         {/* Mode Selector */}
         <div className="gt-modes">
-          <button 
+          <button
             className={`gt-mode-btn ${currentMode === 'text' ? 'active' : ''}`}
             onClick={() => setCurrentMode('text')}
           >
             <span className="icon"><FileTextOutlined /></span> Văn bản
           </button>
-          <button 
+          <button
             className={`gt-mode-btn ${currentMode === 'image' ? 'active' : ''}`}
             onClick={() => setCurrentMode('image')}
           >
             <span className="icon"><PictureOutlined /></span> Hình ảnh
           </button>
-          <button 
+          <button
             className={`gt-mode-btn ${currentMode === 'doc' ? 'active' : ''}`}
             onClick={() => setCurrentMode('doc')}
           >
             <span className="icon"><FileOutlined /></span> Tài liệu
           </button>
-          <button 
+          <button
             className={`gt-mode-btn ${currentMode === 'web' ? 'active' : ''}`}
             onClick={() => setCurrentMode('web')}
           >
             <span className="icon"><GlobalOutlined /></span> Trang web
           </button>
+          {/* <button 
+            className={`gt-mode-btn ${currentMode === 'explain' ? 'active' : ''}`}
+            onClick={() => setCurrentMode('explain')}
+          >
+            <span className="icon"><QuestionCircleOutlined /></span> Giải thích
+          </button>
+          <button 
+            className={`gt-mode-btn ${currentMode === 'summarize' ? 'active' : ''}`}
+            onClick={() => setCurrentMode('summarize')}
+          >
+            <span className="icon"><CompressOutlined /></span> Tóm tắt
+          </button> */}
         </div>
 
         {/* Translator Box */}
@@ -783,20 +892,41 @@ export default function Dashboard() {
               <button className="gt-lang-btn active">{sourceLang}</button>
             </div>
             <button className="gt-swap-btn" title="Chuyển đổi ngôn ngữ" onClick={handleSwapLanguages}><SwapOutlined /></button>
-            <div className="gt-lang-group">
-              <button className="gt-lang-btn active">{targetLang}</button>
+            <div className="gt-lang-group" style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
+              <button
+                className={`gt-lang-btn ${currentMode !== 'explain' && currentMode !== 'summarize' ? 'active' : ''}`}
+                onClick={() => setCurrentMode('text')}
+              >
+                {targetLang}
+              </button>
+              {sourceLang === 'Anh' && (
+                <>
+                  <button
+                    className={`gt-lang-btn ${currentMode === 'explain' ? 'active' : ''}`}
+                    onClick={() => setCurrentMode('explain')}
+                  >
+                    Giải thích
+                  </button>
+                  <button
+                    className={`gt-lang-btn ${currentMode === 'summarize' ? 'active' : ''}`}
+                    onClick={() => setCurrentMode('summarize')}
+                  >
+                    Tóm tắt
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Conditional rendering for Webpage mode vs standard modes */}
+          {/* Conditional rendering for modes */}
           {currentMode === 'web' ? (
             <div className="gt-web-translator">
               <div className="gt-web-input-container">
                 <div className="gt-web-input-wrapper">
                   <span className="gt-web-url-icon"><LinkOutlined /></span>
-                  <input 
-                    type="text" 
-                    placeholder="Nhập địa chỉ website (Ví dụ: wikipedia.org, bbc.com...)" 
+                  <input
+                    type="text"
+                    placeholder="Nhập địa chỉ website (Ví dụ: wikipedia.org, bbc.com...)"
                     value={webUrl}
                     onChange={(e) => setWebUrl(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleWebTranslate(); }}
@@ -804,6 +934,74 @@ export default function Dashboard() {
                   <button className="gt-web-translate-btn" onClick={handleWebTranslate}>
                     Dịch trang <SwapOutlined />
                   </button>
+                </div>
+              </div>
+            </div>
+          ) : currentMode === 'explain' ? (
+            <div className="gt-text-container">
+              <div className="gt-input-box">
+                <textarea
+                  placeholder="Nhập thuật ngữ hoặc đoạn văn bản IT cần giải thích..."
+                  value={explainInput}
+                  onChange={(e) => setExplainInput(e.target.value)}
+                />
+                <div className="gt-box-footer">
+                  <div className="footer-left" />
+                  <div className="footer-right">
+                    <span className="gt-char-count">{explainInput.length} / 5000</span>
+                    {isExplaining && <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Đang giải thích...</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="gt-output-box">
+                <div className={`gt-output-text ${explainOutput ? 'has-content' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
+                  {explainOutput || 'Kết quả giải thích sẽ xuất hiện ở đây'}
+                </div>
+                <div className="gt-box-footer">
+                  <div className="footer-left" />
+                  <div className="footer-right">
+                    <button
+                      className="gt-icon-btn"
+                      title="Sao chép"
+                      onClick={() => explainOutput && navigator.clipboard.writeText(explainOutput)}
+                    >
+                      <CopyOutlined />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : currentMode === 'summarize' ? (
+            <div className="gt-text-container">
+              <div className="gt-input-box">
+                <textarea
+                  placeholder="Nhập nội dung cần tóm tắt (bài viết, đoạn văn, tài liệu...)..."
+                  value={summarizeInput}
+                  onChange={(e) => setSummarizeInput(e.target.value)}
+                />
+                <div className="gt-box-footer">
+                  <div className="footer-left" />
+                  <div className="footer-right">
+                    <span className="gt-char-count">{summarizeInput.length} / 5000</span>
+                    {isSummarizing && <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Đang tóm tắt...</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="gt-output-box">
+                <div className={`gt-output-text ${summarizeOutput ? 'has-content' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
+                  {summarizeOutput || 'Bản tóm tắt sẽ xuất hiện ở đây'}
+                </div>
+                <div className="gt-box-footer">
+                  <div className="footer-left" />
+                  <div className="footer-right">
+                    <button
+                      className="gt-icon-btn"
+                      title="Sao chép"
+                      onClick={() => summarizeOutput && navigator.clipboard.writeText(summarizeOutput)}
+                    >
+                      <CopyOutlined />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -827,7 +1025,7 @@ export default function Dashboard() {
                     </label>
                   </div>
                 )}
-                <textarea 
+                <textarea
                   placeholder={currentMode === 'image' ? "Chữ trích xuất từ ảnh sẽ hiện ở đây" : (currentMode === 'doc' ? "Nội dung tài liệu sẽ hiện ở đây" : "Nhập văn bản")}
                   value={inputText}
                   onChange={(e) => handleTranslate(e.target.value)}
@@ -843,7 +1041,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="gt-output-box">
                 <div className={`gt-output-text ${outputText ? 'has-content' : ''}`}>
                   {outputText || 'Bản dịch'}
@@ -865,13 +1063,13 @@ export default function Dashboard() {
 
         {/* Bottom Actions */}
         <div className="gt-footer-actions">
-          <button 
+          <button
             className={`gt-footer-btn ${activeFooterTab === 'history' ? 'active' : ''}`}
             onClick={() => setActiveFooterTab(activeFooterTab === 'history' ? null : 'history')}
           >
             <span className="icon"><HistoryOutlined /></span> Nhật ký
           </button>
-          <button 
+          <button
             className={`gt-footer-btn ${activeFooterTab === 'saved' ? 'active' : ''}`}
             onClick={() => setActiveFooterTab(activeFooterTab === 'saved' ? null : 'saved')}
           >
@@ -934,22 +1132,22 @@ export default function Dashboard() {
               <h2>⚙️ Cài đặt hệ thống</h2>
               <button className="gt-modal-close" onClick={() => setIsSettingsOpen(false)}>×</button>
             </div>
-            
+
             <div className="gt-modal-body">
               {/* Glossary Settings Section */}
               <div className="settings-section">
                 <h3>📖 Quản lý Từ điển & Thuật ngữ</h3>
-                
+
                 <div className="setting-row">
                   <div className="setting-info">
                     <h4>Sử dụng Sổ tay thuật ngữ</h4>
                     <p>Áp dụng các từ dịch tùy chỉnh của bạn khi dịch thuật.</p>
                   </div>
                   <label className="gt-switch">
-                    <input 
-                      type="checkbox" 
-                      checked={glossaryEnabled} 
-                      onChange={(e) => setGlossaryEnabled(e.target.checked)} 
+                    <input
+                      type="checkbox"
+                      checked={glossaryEnabled}
+                      onChange={(e) => setGlossaryEnabled(e.target.checked)}
                     />
                     <span className="slider round"></span>
                   </label>
@@ -960,8 +1158,8 @@ export default function Dashboard() {
                     <h4>Cơ chế khớp từ điển</h4>
                     <p>Chọn cách áp dụng từ điển của bạn khi dịch.</p>
                   </div>
-                  <select 
-                    value={glossaryMode} 
+                  <select
+                    value={glossaryMode}
                     onChange={(e) => setGlossaryMode(e.target.value)}
                     disabled={!glossaryEnabled}
                     className="gt-select"
@@ -995,8 +1193,8 @@ export default function Dashboard() {
                     <h4>Phương thức suy luận (Inference Mode)</h4>
                     <p>Dịch qua Cloud API hoặc chạy mô hình Offline trên thiết bị của bạn.</p>
                   </div>
-                  <select 
-                    value={inferenceMode} 
+                  <select
+                    value={inferenceMode}
                     onChange={(e) => setInferenceMode(e.target.value)}
                     className="gt-select"
                   >
@@ -1006,7 +1204,7 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            
+
             <div className="gt-modal-footer">
               <button className="gt-btn-primary" onClick={() => setIsSettingsOpen(false)}>Hoàn tất</button>
             </div>
@@ -1022,14 +1220,14 @@ export default function Dashboard() {
               <h2>📖 Thêm thuật ngữ mới</h2>
               <button className="gt-modal-close" onClick={() => setIsAddTermOpen(false)}>×</button>
             </div>
-            
+
             <div className="gt-modal-body">
               <div className="form-group">
                 <label className="form-label">Từ tiếng Anh (English term)</label>
-                <input 
-                  type="text" 
-                  className="gt-input" 
-                  placeholder="Ví dụ: Zero-shot learning" 
+                <input
+                  type="text"
+                  className="gt-input"
+                  placeholder="Ví dụ: Zero-shot learning"
                   value={newTerm}
                   onChange={(e) => setNewTerm(e.target.value)}
                   autoFocus
@@ -1038,10 +1236,10 @@ export default function Dashboard() {
 
               <div className="form-group">
                 <label className="form-label">Nghĩa tiếng Việt (Vietnamese meaning)</label>
-                <input 
-                  type="text" 
-                  className="gt-input" 
-                  placeholder="Ví dụ: Học không nhãn" 
+                <input
+                  type="text"
+                  className="gt-input"
+                  placeholder="Ví dụ: Học không nhãn"
                   value={newMeaning}
                   onChange={(e) => setNewMeaning(e.target.value)}
                 />
@@ -1049,16 +1247,16 @@ export default function Dashboard() {
 
               <div className="form-group">
                 <label className="form-label">Ngữ cảnh sử dụng (Tùy chọn)</label>
-                <input 
-                  type="text" 
-                  className="gt-input" 
-                  placeholder="Ví dụ: Học máy, AI" 
+                <input
+                  type="text"
+                  className="gt-input"
+                  placeholder="Ví dụ: Học máy, AI"
                   value={newContext}
                   onChange={(e) => setNewContext(e.target.value)}
                 />
               </div>
             </div>
-            
+
             <div className="gt-modal-footer">
               <button className="gt-btn-outline" style={{ marginRight: '10px' }} onClick={() => setIsAddTermOpen(false)}>Hủy</button>
               <button className="gt-btn-primary" onClick={handleSaveNewTerm}>Lưu lại</button>
@@ -1109,10 +1307,10 @@ export default function Dashboard() {
                 }}>
                   {isSubmittingAuth ? 'Đang xử lý...' : (isRegistering ? 'Tạo tài khoản' : 'Đăng nhập')}
                 </button>
-                
+
                 <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                   {isRegistering ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'}{' '}
-                  <span 
+                  <span
                     onClick={() => { setIsRegistering(!isRegistering); setAuthError(''); }}
                     style={{ color: '#3b82f6', cursor: 'pointer', fontWeight: 600 }}
                   >
