@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "IT Translator",
+    "name": "DevBridge",
     "version": "1.0.0",
     "description": "Context-aware translation utility for IT specialists, powered by a local fine-tuned LLM.",
     "permissions": [

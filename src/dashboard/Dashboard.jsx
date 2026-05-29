@@ -1187,7 +1187,7 @@ export default function Dashboard() {
         <div className="gt-header-left">
           <div className="gt-logo">
             <span className="gt-logo-icon"><ThunderboltFilled /></span>
-            <span className="gt-logo-text">IT Translator</span>
+            <span className="gt-logo-text">DevBridge</span>
           </div>
         </div>
         <div className="gt-header-right">

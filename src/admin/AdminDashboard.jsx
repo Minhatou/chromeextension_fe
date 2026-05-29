@@ -957,7 +957,7 @@ export default function AdminDashboard() {
         <div className="admin-header-left">
           <div className="admin-logo">
             <ThunderboltFilled style={{ fontSize: 18 }} />
-            <span>IT Translator</span>
+            <span>DevBridge</span>
             <span className="admin-logo-badge">
               <SettingOutlined style={{ marginRight: 4 }} />Admin
             </span>

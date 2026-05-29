@@ -123,7 +123,7 @@ export default function Popup() {
       <header className="popup-header">
         <div className="popup-logo">
           <span className="logo-icon">⚡</span>
-          <span className="logo-text">IT Translator</span>
+          <span className="logo-text">DevBridge</span>
         </div>
         <div
           className={`status-dot ${!status && !error ? 'checking' : online ? 'online' : 'offline'}`}
