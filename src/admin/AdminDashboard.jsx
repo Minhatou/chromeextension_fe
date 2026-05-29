@@ -799,7 +799,7 @@ function StatusTab() {
                 <span className={`status-dot ${status?.status === 'running' ? 'online' : 'offline'}`} />
                 {status?.status === 'running' ? 'Online' : 'Offline'}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{API}</div>
+              {/* <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{API}</div> */}
             </div>
 
             <div className="status-card">
@@ -899,12 +899,12 @@ function StatusTab() {
 
 // ── Main AdminDashboard ───────────────────────────────────────────────────────
 const NAV = [
-  { id: 'users',         icon: <TeamOutlined />,      label: 'Người dùng' },
-  { id: 'history',       icon: <HistoryOutlined />,    label: 'Lịch sử dịch' },
-  { id: 'glossary',      icon: <BookOutlined />,       label: 'Thuật ngữ hệ thống' },
-  { id: 'models',        icon: <RobotOutlined />,      label: 'Quản lý Model' },
-  { id: 'transactions',  icon: <BulbOutlined />,       label: 'Quản lý Giao dịch' },
-  { id: 'status',        icon: <DashboardOutlined />,  label: 'Trạng thái máy chủ' },
+  { id: 'users', icon: <TeamOutlined />, label: 'Người dùng' },
+  { id: 'history', icon: <HistoryOutlined />, label: 'Lịch sử dịch' },
+  { id: 'glossary', icon: <BookOutlined />, label: 'Thuật ngữ hệ thống' },
+  { id: 'models', icon: <RobotOutlined />, label: 'Quản lý Model' },
+  { id: 'transactions', icon: <BulbOutlined />, label: 'Quản lý Giao dịch' },
+  { id: 'status', icon: <DashboardOutlined />, label: 'Trạng thái máy chủ' },
 ];
 
 export default function AdminDashboard() {
@@ -918,7 +918,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     document.body.setAttribute('data-theme', theme);
-    try { localStorage.setItem('theme', theme); } catch {}
+    try { localStorage.setItem('theme', theme); } catch { }
   }, [theme]);
 
   useEffect(() => {
@@ -1008,12 +1008,12 @@ export default function AdminDashboard() {
           </nav>
 
           <main className="admin-content">
-            {activeTab === 'users'         && <UsersTab         uid={session.uid} toast={toast} />}
-            {activeTab === 'history'       && <HistoryTab       uid={session.uid} toast={toast} />}
-            {activeTab === 'glossary'      && <GlossaryTab      uid={session.uid} toast={toast} />}
-            {activeTab === 'models'        && <ModelsTab        uid={session.uid} toast={toast} />}
-            {activeTab === 'transactions'  && <TransactionsTab  uid={session.uid} toast={toast} />}
-            {activeTab === 'status'        && <StatusTab        toast={toast} />}
+            {activeTab === 'users' && <UsersTab uid={session.uid} toast={toast} />}
+            {activeTab === 'history' && <HistoryTab uid={session.uid} toast={toast} />}
+            {activeTab === 'glossary' && <GlossaryTab uid={session.uid} toast={toast} />}
+            {activeTab === 'models' && <ModelsTab uid={session.uid} toast={toast} />}
+            {activeTab === 'transactions' && <TransactionsTab uid={session.uid} toast={toast} />}
+            {activeTab === 'status' && <StatusTab toast={toast} />}
           </main>
         </div>
       )}

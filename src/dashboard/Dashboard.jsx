@@ -134,7 +134,15 @@ export default function Dashboard() {
     } else {
       localStorage.setItem('shareTranslation', shareTranslation);
     }
-  }, [shareTranslation]);
+
+    if (session && session.uid) {
+      fetch('http://127.0.0.1:5000/api/user/share_translation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: session.uid, share_translation: shareTranslation })
+      }).catch(err => console.error("Error syncing share translation to Firestore:", err));
+    }
+  }, [shareTranslation, session?.uid]);
 
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -168,53 +176,61 @@ export default function Dashboard() {
     getSession().then(s => {
       if (s) {
         setSession(s);
-        // Instantly verify with backend to fetch fresh, real-time credits & theme from Firestore
-        if (s.idToken) {
-          console.log("[Auth] Verifying token to fetch fresh credit balance...");
-          fetch('http://127.0.0.1:5000/api/auth/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: s.idToken })
-          })
-            .then(r => {
-              if (r.ok) return r.json();
-              throw new Error("Token verification failed");
-            })
-            .then(freshData => {
-              console.log("[Auth] Fresh Firestore data received:", freshData);
-              if (freshData.valid) {
-                const updatedSession = { ...s, ...freshData };
-                if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                  chrome.storage.local.set({ authSession: updatedSession });
-                } else {
-                  localStorage.setItem('authSession', JSON.stringify(updatedSession));
-                }
-                setSession(updatedSession);
-              }
-            })
-            .catch(err => {
-              console.error("[Auth] Failed to refresh credit balance:", err);
-            });
-        }
       } else {
         setIsAuthModalOpen(true);
       }
     });
   }, []);
 
+  // Fetch fresh credit balance and data whenever uid changes (signifying login, logout, or account switch)
   useEffect(() => {
-    if (session) {
-      if (session.free_credit !== undefined) setFreeCredit(session.free_credit);
-      if (session.purchased_credit !== undefined) setPurchasedCredit(session.purchased_credit);
-      if (session.total_credit !== undefined) {
-        setTotalCredit(session.total_credit);
-        setTokensBalance(session.total_credit);
-      }
-      if (session.theme) {
-        setTheme(session.theme);
-      }
+    if (session && session.uid && session.idToken) {
+      console.log("[Auth] Session UID changed or updated, fetching fresh credit balance...");
+      fetch('http://127.0.0.1:5000/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: session.idToken })
+      })
+        .then(r => {
+          if (r.ok) return r.json();
+          throw new Error("Token verification failed");
+        })
+        .then(freshData => {
+          console.log("[Auth] Fresh Firestore data received for new session:", freshData);
+          if (freshData.valid) {
+            const updatedSession = { ...session, ...freshData };
+            // Save to storage
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+              chrome.storage.local.set({ authSession: updatedSession });
+            } else {
+              localStorage.setItem('authSession', JSON.stringify(updatedSession));
+            }
+            // Update states directly to ensure real-time UI synchronization
+            if (freshData.free_credit !== undefined) setFreeCredit(freshData.free_credit);
+            if (freshData.purchased_credit !== undefined) setPurchasedCredit(freshData.purchased_credit);
+            if (freshData.total_credit !== undefined) {
+              setTotalCredit(freshData.total_credit);
+              setTokensBalance(freshData.total_credit);
+            }
+            if (freshData.theme) {
+              setTheme(freshData.theme);
+            }
+            if (freshData.share_translation !== undefined) {
+              setShareTranslation(freshData.share_translation);
+            }
+          }
+        })
+        .catch(err => {
+          console.error("[Auth] Failed to refresh credit balance:", err);
+        });
+    } else if (!session) {
+      // Clear/Reset credits on logout
+      setFreeCredit(0);
+      setPurchasedCredit(0);
+      setTotalCredit(0);
+      setTokensBalance(0);
     }
-  }, [session]);
+  }, [session?.uid]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -1831,23 +1847,6 @@ export default function Dashboard() {
                   </label>
                 </div>
 
-                <div className="setting-row" style={{ opacity: glossaryEnabled ? 1 : 0.5 }}>
-                  <div className="setting-info">
-                    <h4>Cơ chế khớp từ điển</h4>
-                    <p>Chọn cách áp dụng từ điển của bạn khi dịch.</p>
-                  </div>
-                  <select
-                    value={glossaryMode}
-                    onChange={(e) => setGlossaryMode(e.target.value)}
-                    disabled={!glossaryEnabled}
-                    className="gt-select"
-                  >
-                    <option value="both">Khớp trực tiếp & Ngữ cảnh AI (Khuyên dùng)</option>
-                    <option value="direct">Chỉ khớp trực tiếp khi chọn từ đơn</option>
-                    <option value="ai">Chỉ sử dụng làm ngữ cảnh cho mô hình AI</option>
-                  </select>
-                </div>
-
                 <div className="setting-row">
                   <div className="setting-info">
                     <h4>Nhập / Xuất dữ liệu từ điển</h4>
@@ -1872,9 +1871,9 @@ export default function Dashboard() {
                     <p>Chọn giữa Qwen2 (5k/15k) hoặc Qwen3 (7k/21k).</p>
                   </div>
                   <select
-                    value={modelId}
-                    onChange={(e) => setModelId(e.target.value)}
-                    className="gt-select"
+                      value={modelId}
+                      onChange={(e) => setModelId(e.target.value)}
+                      className="gt-select"
                   >
                     <option value="qwen2">Qwen2-1.5b (5đ/15đ trên 1k tokens)</option>
                     <option value="qwen3">Qwen3-1.7b (7đ/21đ trên 1k tokens)</option>
@@ -1894,21 +1893,6 @@ export default function Dashboard() {
                     />
                     <span className="slider round"></span>
                   </label>
-                </div>
-
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <h4>Phương thức suy luận (Inference Mode)</h4>
-                    <p>Dịch qua Cloud API hoặc chạy mô hình Offline trên thiết bị của bạn.</p>
-                  </div>
-                  <select
-                    value={inferenceMode}
-                    onChange={(e) => setInferenceMode(e.target.value)}
-                    className="gt-select"
-                  >
-                    <option value="api">API Mode (Dịch trực tuyến nhanh)</option>
-                    <option value="local">Local Mode (Dịch offline bảo mật)</option>
-                  </select>
                 </div>
               </div>
             </div>
