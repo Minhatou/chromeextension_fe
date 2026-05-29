@@ -1169,29 +1169,16 @@ export default function Dashboard() {
       {/* Header */}
       <header className="gt-header">
         <div className="gt-header-left">
-          <button className="gt-icon-btn menu-btn"><MenuOutlined /></button>
           <div className="gt-logo">
             <span className="gt-logo-icon"><ThunderboltFilled /></span>
             <span className="gt-logo-text">IT Translator</span>
           </div>
         </div>
         <div className="gt-header-right">
-          <button
-            onClick={() => setInferenceMode(inferenceMode === 'api' ? 'local' : 'api')}
-            style={{
-              background: inferenceMode === 'api' ? '#18181b' : '#3b82f6',
-              color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px',
-              fontSize: '13px', fontWeight: 600, cursor: 'pointer', marginRight: '8px',
-              transition: 'background 0.2s'
-            }}
-          >
-            {inferenceMode === 'api' ? '☁️ API' : '💻 Local'}
-          </button>
           <button className="gt-icon-btn" title="Chuyển chế độ tối/sáng" onClick={toggleTheme}>
             {theme === 'light' ? <MoonOutlined /> : <SunOutlined />}
           </button>
           <button className="gt-icon-btn" title="Cài đặt" onClick={() => setIsSettingsOpen(true)}><SettingOutlined /></button>
-          <button className="gt-icon-btn" title="Ứng dụng"><AppstoreOutlined /></button>
  
           {session?.role === 'admin' && (
             <button

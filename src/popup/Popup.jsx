@@ -30,7 +30,7 @@ export default function Popup() {
     getSession().then(s => {
       setSession(s)
       setAuthLoading(false)
-      
+
       if (s && s.idToken) {
         console.log("[Auth Popup] Verifying and refreshing credits...");
         fetch('http://127.0.0.1:5000/api/auth/verify', {
@@ -53,7 +53,7 @@ export default function Popup() {
               setSession(updatedSession);
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     })
 
@@ -265,10 +265,10 @@ export default function Popup() {
                 <span style={{ fontSize: '9px', color: '#a1a1aa', fontWeight: 600 }}>HOẶC</span>
                 <div style={{ flex: 1, height: '1px', background: '#e4e4e7' }}></div>
               </div>
-              <button 
-                type="button" 
-                onClick={handleGoogleAuth} 
-                disabled={isSubmitting} 
+              <button
+                type="button"
+                onClick={handleGoogleAuth}
+                disabled={isSubmitting}
                 style={{
                   background: '#ffffff', color: '#18181b',
                   border: '1px solid #e4e4e7', borderRadius: '8px', padding: '8px',
@@ -281,10 +281,10 @@ export default function Popup() {
                 onMouseOut={e => e.currentTarget.style.backgroundColor = '#ffffff'}
               >
                 <svg viewBox="0 0 24 24" width="14" height="14" style={{ display: 'inline-block' }}>
-                  <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.355 0 3.36 2.655 1.345 6.527l3.921 3.238z"/>
-                  <path fill="#4285F4" d="M23.455 12.273c0-.818-.073-1.609-.209-2.373H12v4.582h6.427a5.532 5.532 0 0 1-2.4 3.627l3.745 2.909c2.191-2.018 3.455-4.991 3.455-8.745z"/>
-                  <path fill="#FBBC05" d="M5.266 14.235A7.077 7.077 0 0 1 4.909 12c0-.791.136-1.555.357-2.235L1.345 6.527A11.954 11.954 0 0 0 0 12c0 2.018.5 3.918 1.382 5.6l3.884-3.365z"/>
-                  <path fill="#34A853" d="M12 24c3.245 0 5.973-1.073 7.964-2.91l-3.745-2.909c-1.036.691-2.364 1.109-3.964 1.109-3.055 0-5.645-2.064-6.564-4.836l-3.909 3.027C3.327 21.327 7.327 24 12 24z"/>
+                  <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.355 0 3.36 2.655 1.345 6.527l3.921 3.238z" />
+                  <path fill="#4285F4" d="M23.455 12.273c0-.818-.073-1.609-.209-2.373H12v4.582h6.427a5.532 5.532 0 0 1-2.4 3.627l3.745 2.909c2.191-2.018 3.455-4.991 3.455-8.745z" />
+                  <path fill="#FBBC05" d="M5.266 14.235A7.077 7.077 0 0 1 4.909 12c0-.791.136-1.555.357-2.235L1.345 6.527A11.954 11.954 0 0 0 0 12c0 2.018.5 3.918 1.382 5.6l3.884-3.365z" />
+                  <path fill="#34A853" d="M12 24c3.245 0 5.973-1.073 7.964-2.91l-3.745-2.909c-1.036.691-2.364 1.109-3.964 1.109-3.055 0-5.645-2.064-6.564-4.836l-3.909 3.027C3.327 21.327 7.327 24 12 24z" />
                 </svg>
                 Đăng nhập bằng Google
               </button>
@@ -293,18 +293,6 @@ export default function Popup() {
         </div>
       )}
 
-      {/* ── How to use (shown only when model is loaded) ── */}
-      {online && modelLoaded && (
-        <div className="instructions">
-          <p className="inst-title">How to use</p>
-          <ol>
-            <li>Select any text on the page</li>
-            <li>Click the <strong>⚡ Translate</strong> button that appears</li>
-            <li>The text is replaced inline — hover to see the original</li>
-          </ol>
-          <p className="inst-note">Auto-detects English ↔ Vietnamese</p>
-        </div>
-      )}
 
       {/* ── Open Dashboard ── */}
       <button

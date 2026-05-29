@@ -485,119 +485,268 @@ function GlossaryTab({ uid, toast }) {
   );
 }
 
-// ── Contributions Tab ─────────────────────────────────────────────────────────
-function ContributionsTab({ uid, toast }) {
-  const [contributions, setContributions] = useState([]);
+// ── Models Tab ────────────────────────────────────────────────────────────────
+function ModelsTab({ uid, toast }) {
+  const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ model_id: '', name: '', path: '', input_price_1m: 5000, output_price_1m: 15000 });
+  const [saving, setSaving] = useState(false);
 
-  const fetchContributions = useCallback(() => {
+  const fetchModels = useCallback(() => {
     setLoading(true);
-    apiPost('/api/admin/contributions', { uid })
-      .then(d => {
-        if (d.contributions) setContributions(d.contributions);
-      })
-      .catch(() => toast('Không thể tải các bản dịch đóng góp', 'error'))
+    apiPost('/api/admin/models', { uid })
+      .then(d => { if (d.models) setModels(d.models); })
+      .catch(() => toast('Không thể tải danh sách model', 'error'))
       .finally(() => setLoading(false));
   }, [uid]);
 
-  useEffect(() => {
-    fetchContributions();
-  }, [fetchContributions]);
+  useEffect(() => { fetchModels(); }, [fetchModels]);
 
-  const handleAction = async (contribId, action) => {
-    const actionLabel = action === 'approved' ? 'phê duyệt' : action === 'rejected' ? 'từ chối' : 'xóa';
-    if (!window.confirm(`Bạn có chắc chắn muốn ${actionLabel} đóng góp này?`)) return;
+  const openAdd = () => {
+    setForm({ model_id: '', name: '', path: '', input_price_1m: 5000, output_price_1m: 15000 });
+    setShowAdd(true);
+  };
 
-    try {
-      const res = await apiPost('/api/admin/contributions/action', { uid, id: contribId, action });
-      if (res.success) {
-        toast(`Đã thực hiện ${actionLabel} thành công!`);
-        if (action === 'delete') {
-          setContributions(prev => prev.filter(c => c.id !== contribId));
-        } else {
-          setContributions(prev => prev.map(c => c.id === contribId ? { ...c, status: action } : c));
-        }
-      } else {
-        toast(res.error || 'Thao tác thất bại', 'error');
-      }
-    } catch (err) {
-      toast('Lỗi kết nối máy chủ', 'error');
+  const deleteModel = async (modelId) => {
+    if (!window.confirm(`Xoá model ${modelId} này?`)) return;
+    const res = await apiPost('/api/admin/models/delete', { uid, model_id: modelId });
+    if (res.success) {
+      setModels(prev => prev.filter(m => m.model_id !== modelId));
+      toast('Đã xoá model thành công');
+    } else {
+      toast(res.error || 'Xoá thất bại', 'error');
+    }
+  };
+
+  const save = async () => {
+    if (!form.model_id.trim() || !form.name.trim() || !form.path.trim()) {
+      toast('Các trường Model ID, Tên và Path không được trống', 'error');
+      return;
+    }
+    setSaving(true);
+    const res = await apiPost('/api/admin/models/add', { uid, ...form });
+    setSaving(false);
+    if (res.success) {
+      fetchModels();
+      toast('Đã lưu model thành công');
+      setShowAdd(false);
+    } else {
+      toast(res.error || 'Lưu thất bại', 'error');
     }
   };
 
   return (
     <div>
-      <div className="admin-section-title">Bản dịch đóng góp từ người dùng</div>
-      <div className="admin-section-desc">Xem xét các bản dịch đề xuất từ người dùng để cải thiện chất lượng dịch thuật. Đóng góp được phê duyệt sẽ tự động thêm vào Thuật ngữ hệ thống.</div>
+      <div className="admin-section-title">Quản lý mô hình AI</div>
+      <div className="admin-section-desc">Xem, cấu hình và thêm các mô hình ngôn ngữ lớn (LLM) trong hệ thống.</div>
 
       <div className="admin-card">
         <div className="admin-card-header">
           <span className="admin-card-title">
-            Danh sách đóng góp
-            <span className="badge-count">{contributions.length}</span>
+            Danh sách mô hình
+            <span className="badge-count">{models.length}</span>
           </span>
-          <button className="btn btn-ghost btn-sm" onClick={fetchContributions} disabled={loading}>
-            <ReloadOutlined spin={loading} /> Làm mới
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" onClick={fetchModels} disabled={loading}>
+              <ReloadOutlined spin={loading} /> Làm mới
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={openAdd}>
+              <PlusOutlined /> Thêm mô hình
+            </button>
+          </div>
         </div>
 
         {loading ? (
           <div className="admin-empty"><span className="admin-spinner" /></div>
-        ) : contributions.length === 0 ? (
-          <div className="admin-empty">Không có đóng góp nào.</div>
+        ) : models.length === 0 ? (
+          <div className="admin-empty">Chưa có mô hình nào. Nhấn "Thêm mô hình" để bắt đầu.</div>
         ) : (
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Người đóng góp</th>
-                <th>Văn bản gốc</th>
-                <th>Bản dịch AI</th>
-                <th>Bản dịch đề xuất</th>
-                <th>Trạng thái</th>
+                <th>Model ID</th>
+                <th>Tên hiển thị</th>
+                <th>Đường dẫn (Path)</th>
+                <th>Giá Input (1M tokens)</th>
+                <th>Giá Output (1M tokens)</th>
                 <th>Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {contributions.map(c => (
-                <tr key={c.id}>
-                  <td style={{ fontSize: '12px' }}>
-                    <strong>{c.email || 'Ẩn danh'}</strong>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '10px', fontFamily: 'monospace' }}>{c.user_id}</div>
-                  </td>
-                  <td><span className="truncate" title={c.source_text}>{c.source_text}</span></td>
-                  <td><span className="truncate" style={{ textDecoration: 'line-through', opacity: 0.6 }} title={c.original_translation}>{c.original_translation}</span></td>
-                  <td><span className="truncate" style={{ color: 'var(--success)', fontWeight: 600 }} title={c.suggested_translation}>{c.suggested_translation}</span></td>
+              {models.map(m => (
+                <tr key={m.model_id}>
+                  <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{m.model_id}</td>
+                  <td>{m.name}</td>
+                  <td style={{ color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'monospace' }}>{m.path}</td>
+                  <td>{m.input_price_1m?.toLocaleString('vi-VN')} VNĐ</td>
+                  <td>{m.output_price_1m?.toLocaleString('vi-VN')} VNĐ</td>
                   <td>
-                    <span className={`role-badge ${c.status || 'pending'}`} style={{
-                      background: c.status === 'approved' ? 'rgba(16, 185, 129, 0.1)' : c.status === 'rejected' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                      color: c.status === 'approved' ? '#10b981' : c.status === 'rejected' ? '#ef4444' : '#f59e0b',
-                      border: 'none', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600
-                    }}>
-                      {c.status === 'approved' ? 'Đã duyệt' : c.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {(!c.status || c.status === 'pending') && (
-                        <>
-                          <button className="btn btn-ghost btn-sm" style={{ color: '#10b981' }} onClick={() => handleAction(c.id, 'approved')}>
-                            <CheckOutlined /> Duyệt
-                          </button>
-                          <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }} onClick={() => handleAction(c.id, 'rejected')}>
-                            <CloseOutlined /> Từ chối
-                          </button>
-                        </>
-                      )}
-                      <button className="btn btn-danger btn-sm" onClick={() => handleAction(c.id, 'delete')}>
-                        <DeleteOutlined />
-                      </button>
-                    </div>
+                    <button className="btn btn-danger btn-sm" onClick={() => deleteModel(m.model_id)}>
+                      <DeleteOutlined /> Xoá
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+      </div>
+
+      {showAdd && (
+        <div className="admin-modal-overlay" onClick={() => setShowAdd(false)}>
+          <div className="admin-modal" onClick={e => e.stopPropagation()}>
+            <div className="admin-modal-title">
+              <PlusOutlined /> Thêm mô hình AI mới
+            </div>
+            <div className="admin-form">
+              <div className="admin-form-group">
+                <label>Model ID (vd: qwen2, llama3)</label>
+                <input
+                  className="admin-input"
+                  placeholder="model_id"
+                  value={form.model_id}
+                  onChange={e => setForm(p => ({ ...p, model_id: e.target.value }))}
+                />
+              </div>
+              <div className="admin-form-group">
+                <label>Tên hiển thị</label>
+                <input
+                  className="admin-input"
+                  placeholder="Qwen2-1.5B Premium"
+                  value={form.name}
+                  onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                />
+              </div>
+              <div className="admin-form-group">
+                <label>Đường dẫn (Local path hoặc HuggingFace repo)</label>
+                <input
+                  className="admin-input"
+                  placeholder="C:\paths\to\model..."
+                  value={form.path}
+                  onChange={e => setForm(p => ({ ...p, path: e.target.value }))}
+                />
+              </div>
+              <div className="admin-form-group">
+                <label>Giá Input (VNĐ cho 1 triệu tokens)</label>
+                <input
+                  type="number"
+                  className="admin-input"
+                  value={form.input_price_1m}
+                  onChange={e => setForm(p => ({ ...p, input_price_1m: parseFloat(e.target.value) || 0 }))}
+                />
+              </div>
+              <div className="admin-form-group">
+                <label>Giá Output (VNĐ cho 1 triệu tokens)</label>
+                <input
+                  type="number"
+                  className="admin-input"
+                  value={form.output_price_1m}
+                  onChange={e => setForm(p => ({ ...p, output_price_1m: parseFloat(e.target.value) || 0 }))}
+                />
+              </div>
+            </div>
+            <div className="admin-modal-actions">
+              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>
+                <CloseOutlined /> Huỷ
+              </button>
+              <button className="btn btn-primary" onClick={save} disabled={saving}>
+                {saving ? <span className="admin-spinner" /> : <CheckOutlined />} Thêm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Transactions Tab ─────────────────────────────────────────────────────────
+function TransactionsTab({ uid, toast }) {
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchTransactions = useCallback(() => {
+    setLoading(true);
+    apiPost('/api/admin/transactions', { uid })
+      .then(d => { if (d.transactions) setTransactions(d.transactions); })
+      .catch(() => toast('Không thể tải lịch sử giao dịch', 'error'))
+      .finally(() => setLoading(false));
+  }, [uid]);
+
+  useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
+
+  const totalRevenue = transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
+
+  return (
+    <div>
+      <div className="admin-section-title">Quản lý giao dịch nạp tiền</div>
+      <div className="admin-section-desc">Theo dõi các giao dịch nạp Credit mua của người dùng qua VietQR.</div>
+
+      <div className="admin-card">
+        <div className="admin-card-header">
+          <span className="admin-card-title">
+            Lịch sử giao dịch
+            <span className="badge-count">{transactions.length}</span>
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={fetchTransactions} disabled={loading}>
+            <ReloadOutlined spin={loading} /> Làm mới
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="admin-empty"><span className="admin-spinner" /></div>
+        ) : transactions.length === 0 ? (
+          <div className="admin-empty">Không có giao dịch nào được ghi nhận.</div>
+        ) : (
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Mã giao dịch (ID)</th>
+                <th>UID Người dùng</th>
+                <th>Gói dịch vụ</th>
+                <th>Số tiền</th>
+                <th>Hình thức</th>
+                <th>Thời gian</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.map(t => (
+                <tr key={t.id}>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{t.id}</td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)' }}>{t.uid}</td>
+                  <td>
+                    <span style={{ fontSize: 12, background: 'var(--item-bg)', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '2px 8px', fontWeight: 600 }}>
+                      {t.package_id === 'basic' ? 'Cơ bản' : t.package_id === 'standard' ? 'Tiêu chuẩn' : 'Cao cấp'}
+                    </span>
+                  </td>
+                  <td style={{ color: 'var(--success)', fontWeight: 700 }}>+{t.amount?.toLocaleString('vi-VN')} VNĐ</td>
+                  <td>
+                    <span style={{ textTransform: 'uppercase', fontSize: 11, color: 'var(--text-secondary)' }}>{t.payment_method || 'QR'}</span>
+                  </td>
+                  <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    {t.timestamp ? new Date(t.timestamp).toLocaleString('vi-VN') : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+        <div className="admin-card" style={{ flex: 1, marginBottom: 0 }}>
+          <div className="admin-card-title" style={{ marginBottom: 8 }}>💰 Tổng doanh thu</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--success)' }}>
+            {totalRevenue.toLocaleString('vi-VN')} VNĐ
+          </div>
+        </div>
+        <div className="admin-card" style={{ flex: 1, marginBottom: 0 }}>
+          <div className="admin-card-title" style={{ marginBottom: 8 }}>📈 Số lượt giao dịch</div>
+          <div style={{ fontSize: 28, fontWeight: 700 }}>
+            {transactions.length}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -753,7 +902,8 @@ const NAV = [
   { id: 'users',         icon: <TeamOutlined />,      label: 'Người dùng' },
   { id: 'history',       icon: <HistoryOutlined />,    label: 'Lịch sử dịch' },
   { id: 'glossary',      icon: <BookOutlined />,       label: 'Thuật ngữ hệ thống' },
-  { id: 'contributions', icon: <BulbOutlined />,       label: 'Bản dịch đóng góp' },
+  { id: 'models',        icon: <RobotOutlined />,      label: 'Quản lý Model' },
+  { id: 'transactions',  icon: <BulbOutlined />,       label: 'Quản lý Giao dịch' },
   { id: 'status',        icon: <DashboardOutlined />,  label: 'Trạng thái máy chủ' },
 ];
 
@@ -861,7 +1011,8 @@ export default function AdminDashboard() {
             {activeTab === 'users'         && <UsersTab         uid={session.uid} toast={toast} />}
             {activeTab === 'history'       && <HistoryTab       uid={session.uid} toast={toast} />}
             {activeTab === 'glossary'      && <GlossaryTab      uid={session.uid} toast={toast} />}
-            {activeTab === 'contributions' && <ContributionsTab uid={session.uid} toast={toast} />}
+            {activeTab === 'models'        && <ModelsTab        uid={session.uid} toast={toast} />}
+            {activeTab === 'transactions'  && <TransactionsTab  uid={session.uid} toast={toast} />}
             {activeTab === 'status'        && <StatusTab        toast={toast} />}
           </main>
         </div>
