@@ -15,11 +15,11 @@ export async function checkStatus() {
  * @param {string} context
  * @param {'auto'|'vietnamese'|'english'} targetLang
  */
-export async function translateText(text, context = '', targetLang = 'auto', glossary = {}, glossaryMode = 'both', userId = 'anonymous') {
+export async function translateText(text, context = '', targetLang = 'auto', glossary = {}, glossaryMode = 'both', userId = 'anonymous', modelId = 'qwen2', shareTranslation = false) {
   const response = await fetch(`${BASE_URL}/api/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, context, target_lang: targetLang, glossary, glossary_mode: glossaryMode, user_id: userId }),
+    body: JSON.stringify({ text, context, target_lang: targetLang, glossary, glossary_mode: glossaryMode, user_id: userId, model_id: modelId, share_translation: shareTranslation }),
   })
   if (!response.ok) {
     const err = await response.json()
@@ -109,11 +109,11 @@ export async function contributeTranslation(uid, email, sourceText, originalTran
 /**
  * Recharge tokens (Mock payment recharge).
  */
-export async function rechargeTokens(uid, packageId) {
+export async function rechargeTokens(uid, packageId, paymentMethod = 'qr') {
   const response = await fetch(`${BASE_URL}/api/user/recharge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uid, package_id: packageId }),
+    body: JSON.stringify({ uid, package_id: packageId, payment_method: paymentMethod }),
   })
   if (!response.ok) {
     const err = await response.json()

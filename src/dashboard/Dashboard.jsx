@@ -10,7 +10,7 @@ import {
   contributeTranslation,
   rechargeTokens
 } from '../api/translationClient';
-import { loginWithEmail, registerWithEmail, logout, getSession } from '../api/authClient';
+import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle } from '../api/authClient';
 import { createWorker } from 'tesseract.js';
 import {
   SunOutlined, MoonOutlined,
@@ -88,6 +88,24 @@ export default function Dashboard() {
   const [contribSuccessMsg, setContribSuccessMsg] = useState('');
 
   const [tokensBalance, setTokensBalance] = useState(1000000);
+  const [freeCredit, setFreeCredit] = useState(100000.0);
+  const [purchasedCredit, setPurchasedCredit] = useState(0.0);
+  const [totalCredit, setTotalCredit] = useState(100000.0);
+  const [modelId, setModelId] = useState(() => {
+    try {
+      return localStorage.getItem('modelId') || 'qwen2';
+    } catch {
+      return 'qwen2';
+    }
+  });
+  const [shareTranslation, setShareTranslation] = useState(() => {
+    try {
+      return localStorage.getItem('shareTranslation') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   const [savedVocabulary, setSavedVocabulary] = useState([]);
 
   // Mock Payment States
@@ -100,6 +118,23 @@ export default function Dashboard() {
   const [creditCardExp, setCreditCardExp] = useState('');
   const [creditCardCvv, setCreditCardCvv] = useState('');
   const [rechargeSuccess, setRechargeSuccess] = useState(false);
+
+  // Sync modelId and shareTranslation changes
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ modelId });
+    } else {
+      localStorage.setItem('modelId', modelId);
+    }
+  }, [modelId]);
+
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ shareTranslation });
+    } else {
+      localStorage.setItem('shareTranslation', shareTranslation);
+    }
+  }, [shareTranslation]);
 
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -118,18 +153,66 @@ export default function Dashboard() {
     } else {
       localStorage.setItem('theme', theme);
     }
-  }, [theme]);
+
+    if (session && session.uid) {
+      fetch('http://127.0.0.1:5000/api/user/theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: session.uid, theme: theme })
+      }).catch(err => console.error("Error syncing theme to Firestore:", err));
+    }
+  }, [theme, session?.uid]);
 
   // Sync session on mount
   useEffect(() => {
     getSession().then(s => {
-      if (s) setSession(s);
+      if (s) {
+        setSession(s);
+        // Instantly verify with backend to fetch fresh, real-time credits & theme from Firestore
+        if (s.idToken) {
+          console.log("[Auth] Verifying token to fetch fresh credit balance...");
+          fetch('http://127.0.0.1:5000/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken: s.idToken })
+          })
+            .then(r => {
+              if (r.ok) return r.json();
+              throw new Error("Token verification failed");
+            })
+            .then(freshData => {
+              console.log("[Auth] Fresh Firestore data received:", freshData);
+              if (freshData.valid) {
+                const updatedSession = { ...s, ...freshData };
+                if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                  chrome.storage.local.set({ authSession: updatedSession });
+                } else {
+                  localStorage.setItem('authSession', JSON.stringify(updatedSession));
+                }
+                setSession(updatedSession);
+              }
+            })
+            .catch(err => {
+              console.error("[Auth] Failed to refresh credit balance:", err);
+            });
+        }
+      } else {
+        setIsAuthModalOpen(true);
+      }
     });
   }, []);
 
   useEffect(() => {
-    if (session && session.tokens_balance !== undefined) {
-      setTokensBalance(session.tokens_balance);
+    if (session) {
+      if (session.free_credit !== undefined) setFreeCredit(session.free_credit);
+      if (session.purchased_credit !== undefined) setPurchasedCredit(session.purchased_credit);
+      if (session.total_credit !== undefined) {
+        setTotalCredit(session.total_credit);
+        setTokensBalance(session.total_credit);
+      }
+      if (session.theme) {
+        setTheme(session.theme);
+      }
     }
   }, [session]);
 
@@ -148,6 +231,20 @@ export default function Dashboard() {
       setIsAuthModalOpen(false);
       setAuthEmail('');
       setAuthPassword('');
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  const handleGoogleAuth = async () => {
+    setAuthError('');
+    setIsSubmittingAuth(true);
+    try {
+      const s = await loginWithGoogle();
+      setSession(s);
+      setIsAuthModalOpen(false);
     } catch (err) {
       setAuthError(err.message);
     } finally {
@@ -638,19 +735,22 @@ export default function Dashboard() {
         console.log(`[Dashboard] 🎯 Khớp từ điển cá nhân cho:`, matchedTerms);
       }
 
-      const result = await translateText(text, '', 'auto', glossaryDict, glossaryMode, session.uid);
+      const result = await translateText(text, '', 'auto', glossaryDict, glossaryMode, session.uid, modelId, shareTranslation);
       console.log('[Dashboard] Translation result:', result);
       setOutputText(result.translation || 'Không nhận được bản dịch');
       if (result.from_cache) {
         setIsFromCache(true);
       }
-      if (result.tokens_balance !== undefined) {
-        setTokensBalance(result.tokens_balance);
+      if (result.total_credit !== undefined) {
+        setTotalCredit(result.total_credit);
+        setFreeCredit(result.free_credit);
+        setPurchasedCredit(result.purchased_credit);
+        setTokensBalance(result.total_credit);
       }
     } catch (error) {
       console.error('[Dashboard] Translation error:', error);
-      if (error.message && (error.message.includes('OUT_OF_TOKENS') || error.message.includes('hết token'))) {
-        setOutputText('Lỗi: Bạn đã hết token dịch miễn phí. Vui lòng chọn tab "Nạp Token" phía dưới để tiếp tục!');
+      if (error.message && (error.message.includes('OUT_OF_TOKENS') || error.message.includes('hết token') || error.message.includes('hết credit'))) {
+        setOutputText('Lỗi: Bạn đã hết credit dịch thuật. Vui lòng chọn tab "Nạp Credit" phía dưới để tiếp tục!');
       } else {
         setOutputText('Lỗi khi dịch: ' + error.message);
       }
@@ -673,15 +773,18 @@ export default function Dashboard() {
       const res = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, context: '', target_lang: 'explain', glossary: {}, glossary_mode: 'both', user_id: session.uid })
+        body: JSON.stringify({ text, context: '', target_lang: 'explain', glossary: {}, glossary_mode: 'both', user_id: session.uid, model_id: modelId, share_translation: shareTranslation })
       });
       if (res.status === 402) {
-        setExplainOutput('Lỗi: Bạn đã hết token dịch miễn phí. Vui lòng nạp thêm token để tiếp tục!');
+        setExplainOutput('Lỗi: Bạn đã hết credit dịch thuật. Vui lòng nạp thêm credit để tiếp tục!');
       } else if (res.ok) {
         const data = await res.json();
         setExplainOutput(data.translation || 'Không có kết quả.');
-        if (data.tokens_balance !== undefined) {
-          setTokensBalance(data.tokens_balance);
+        if (data.total_credit !== undefined) {
+          setTotalCredit(data.total_credit);
+          setFreeCredit(data.free_credit);
+          setPurchasedCredit(data.purchased_credit);
+          setTokensBalance(data.total_credit);
         }
       } else {
         const data = await res.json().catch(() => ({}));
@@ -710,15 +813,18 @@ export default function Dashboard() {
       const res = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, context: '', target_lang: 'summarize', glossary: {}, glossary_mode: 'both', user_id: session.uid })
+        body: JSON.stringify({ text, context: '', target_lang: 'summarize', glossary: {}, glossary_mode: 'both', user_id: session.uid, model_id: modelId, share_translation: shareTranslation })
       });
       if (res.status === 402) {
-        setSummarizeOutput('Lỗi: Bạn đã hết token dịch miễn phí. Vui lòng nạp thêm token để tiếp tục!');
+        setSummarizeOutput('Lỗi: Bạn đã hết credit dịch thuật. Vui lòng nạp thêm credit để tiếp tục!');
       } else if (res.ok) {
         const data = await res.json();
         setSummarizeOutput(data.translation || 'Không có kết quả.');
-        if (data.tokens_balance !== undefined) {
-          setTokensBalance(data.tokens_balance);
+        if (data.total_credit !== undefined) {
+          setTotalCredit(data.total_credit);
+          setFreeCredit(data.free_credit);
+          setPurchasedCredit(data.purchased_credit);
+          setTokensBalance(data.total_credit);
         }
       } else {
         const data = await res.json().catch(() => ({}));
@@ -755,14 +861,17 @@ export default function Dashboard() {
     await new Promise(resolve => setTimeout(resolve, 1800));
     
     try {
-      const res = await rechargeTokens(session.uid, selectedPackage);
+      const res = await rechargeTokens(session.uid, selectedPackage, paymentMethod);
       if (res.success) {
-        setTokensBalance(res.tokens_balance);
+        setFreeCredit(res.free_credit);
+        setPurchasedCredit(res.purchased_credit);
+        setTotalCredit(res.total_credit);
+        setTokensBalance(res.total_credit);
         setRechargeSuccess(true);
         setIsProcessingPayment(false);
         // Sync with chrome local storage if extension context
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({ authSession: { ...session, tokens_balance: res.tokens_balance } });
+          chrome.storage.local.set({ authSession: { ...session, free_credit: res.free_credit, purchased_credit: res.purchased_credit, total_credit: res.total_credit } });
         }
       } else {
         alert("Lỗi khi nạp: " + (res.error || "Không rõ nguyên nhân"));
@@ -1135,27 +1244,41 @@ export default function Dashboard() {
                       </strong>
                     </div>
 
-                    {/* Moved Token Limit Progress Bar */}
+                    {/* Stark & premium VND credit details */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#aaa', fontWeight: 500 }}>
-                        <span>Hạn mức Token</span>
+                        <span>Credit miễn phí (ngày)</span>
                         <strong style={{ color: '#fff' }}>
-                          {tokensBalance === -1 ? 'Vô hạn' : `${tokensBalance.toLocaleString()} / 1M`}
+                          {totalCredit === -1 ? 'Vô hạn' : `${freeCredit.toLocaleString('vi-VN')}đ / 100k`}
                         </strong>
                       </div>
-                      {tokensBalance !== -1 && (
+                      {totalCredit !== -1 && (
                         <div style={{
                           width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px',
                           overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)'
                         }}>
                           <div style={{
-                            width: `${Math.min(100, (tokensBalance / 1000000) * 100)}%`,
+                            width: `${Math.min(100, (freeCredit / 100000.0) * 100)}%`,
                             height: '100%',
-                            background: tokensBalance > 200000 ? 'linear-gradient(90deg, #ffffff, #aaaaaa)' : 'linear-gradient(90deg, #ef4444, #f87171)',
+                            background: 'linear-gradient(90deg, #10b981, #34d399)',
                             transition: 'width 0.3s ease'
                           }}></div>
                         </div>
                       )}
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#aaa', fontWeight: 500, marginTop: '4px' }}>
+                        <span>Credit đã mua</span>
+                        <strong style={{ color: '#60a5fa' }}>
+                          {totalCredit === -1 ? 'Vô hạn' : `${purchasedCredit.toLocaleString('vi-VN')}đ`}
+                        </strong>
+                      </div>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#fff', fontWeight: 700, marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '6px' }}>
+                        <span>Tổng số dư</span>
+                        <span>
+                          {totalCredit === -1 ? 'Vô hạn' : `${totalCredit.toLocaleString('vi-VN')}đ`}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Moved Nạp Token button */}
@@ -1574,9 +1697,9 @@ export default function Dashboard() {
         {activeFooterTab === 'recharge' && (
           <div className="gt-panel glass">
             <div className="panel-header">
-              <h3>💎 Nạp thêm Token & Gói dịch vụ</h3>
+              <h3>💎 Nạp thêm Credit dịch thuật (VNĐ)</h3>
               <span style={{ fontSize: '13px', color: '#60a5fa', fontWeight: 600 }}>
-                Số dư hiện tại: {tokensBalance.toLocaleString()} tokens
+                Số dư: {totalCredit === -1 ? 'Vô hạn' : `${totalCredit.toLocaleString('vi-VN')}đ`} (Miễn phí: {freeCredit.toLocaleString('vi-VN')}đ, Đã mua: {purchasedCredit.toLocaleString('vi-VN')}đ)
               </span>
             </div>
             
@@ -1594,10 +1717,10 @@ export default function Dashboard() {
                 <div>
                   <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#94a3b8' }}>Gói Cơ Bản</h4>
                   <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                    100.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>tokens</span>
+                    +50.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
                   </div>
                   <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
-                    Phù hợp cho lập trình viên dịch tài liệu nhỏ hoặc kiểm thử API.
+                    Phù hợp cho lập trình viên dịch tài liệu nhỏ hoặc dùng thử model mới.
                   </p>
                 </div>
                 <div>
@@ -1626,7 +1749,7 @@ export default function Dashboard() {
                 <div>
                   <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#38bdf8' }}>Gói Tiêu Chuẩn</h4>
                   <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                    500.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>tokens</span>
+                    +200.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
                   </div>
                   <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
                     Gói tối ưu nhất cho công việc dịch thuật hàng ngày, giải thích code và tài liệu IT lớn.
@@ -1652,7 +1775,7 @@ export default function Dashboard() {
                 <div>
                   <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#a78bfa' }}>Gói Cao Cấp</h4>
                   <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                    2.000.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>tokens</span>
+                    +500.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
                   </div>
                   <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
                     Dành cho doanh nghiệp hoặc lập trình viên chuyên nghiệp dịch khối lượng văn bản khổng lồ.
@@ -1736,6 +1859,36 @@ export default function Dashboard() {
               {/* Inference Settings Section */}
               <div className="settings-section">
                 <h3>⚡ Chế độ Dịch & Mô hình</h3>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <h4>Mô hình AI dịch thuật</h4>
+                    <p>Chọn giữa Qwen2 (5k/15k) hoặc Qwen3 (7k/21k).</p>
+                  </div>
+                  <select
+                    value={modelId}
+                    onChange={(e) => setModelId(e.target.value)}
+                    className="gt-select"
+                  >
+                    <option value="qwen2">Qwen2-1.5b (5đ/15đ trên 1k tokens)</option>
+                    <option value="qwen3">Qwen3-1.7b (7đ/21đ trên 1k tokens)</option>
+                  </select>
+                </div>
+
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <h4>Đồng ý chia sẻ bản dịch</h4>
+                    <p>Chia sẻ các bản dịch với Admin để cải tiến chất lượng hệ thống.</p>
+                  </div>
+                  <label className="gt-switch">
+                    <input
+                      type="checkbox"
+                      checked={shareTranslation}
+                      onChange={(e) => setShareTranslation(e.target.checked)}
+                    />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+
                 <div className="setting-row">
                   <div className="setting-info">
                     <h4>Phương thức suy luận (Inference Mode)</h4>
@@ -1856,6 +2009,34 @@ export default function Dashboard() {
                   {isSubmittingAuth ? 'Đang xử lý...' : (isRegistering ? 'Tạo tài khoản' : 'Đăng nhập')}
                 </button>
 
+                <div style={{ display: 'flex', alignItems: 'center', margin: '8px 0', gap: '8px' }}>
+                  <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }}></div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>HOẶC</span>
+                  <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }}></div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleAuth}
+                  disabled={isSubmittingAuth}
+                  style={{
+                    background: 'var(--bg-secondary)', color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)', borderRadius: '8px',
+                    padding: '10px', fontSize: '13px', fontWeight: 600,
+                    cursor: isSubmittingAuth ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    transition: 'opacity 0.2s'
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" style={{ display: 'inline-block' }}>
+                    <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.355 0 3.36 2.655 1.345 6.527l3.921 3.238z"/>
+                    <path fill="#4285F4" d="M23.455 12.273c0-.818-.073-1.609-.209-2.373H12v4.582h6.427a5.532 5.532 0 0 1-2.4 3.627l3.745 2.909c2.191-2.018 3.455-4.991 3.455-8.745z"/>
+                    <path fill="#FBBC05" d="M5.266 14.235A7.077 7.077 0 0 1 4.909 12c0-.791.136-1.555.357-2.235L1.345 6.527A11.954 11.954 0 0 0 0 12c0 2.018.5 3.918 1.382 5.6l3.884-3.365z"/>
+                    <path fill="#34A853" d="M12 24c3.245 0 5.973-1.073 7.964-2.91l-3.745-2.909c-1.036.691-2.364 1.109-3.964 1.109-3.055 0-5.645-2.064-6.564-4.836l-3.909 3.027C3.327 21.327 7.327 24 12 24z"/>
+                  </svg>
+                  Đăng nhập bằng Google
+                </button>
+
                 <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                   {isRegistering ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'}{' '}
                   <span
@@ -1955,7 +2136,7 @@ export default function Dashboard() {
         <div className="gt-modal-overlay" onClick={() => !isProcessingPayment && setIsRechargeOpen(false)}>
           <div className="gt-modal-content glass animate-slide-up" style={{ maxWidth: '420px', background: 'rgba(15, 15, 15, 0.98)', border: '1px solid rgba(255, 255, 255, 0.25)', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
             <div className="gt-modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>💎 Thanh toán & Nạp Token</h2>
+              <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>💎 Thanh toán & Nạp Credit VNĐ</h2>
               <button className="gt-modal-close" disabled={isProcessingPayment} onClick={() => setIsRechargeOpen(false)} style={{ color: '#aaa' }}>×</button>
             </div>
 
@@ -1963,9 +2144,9 @@ export default function Dashboard() {
               {rechargeSuccess ? (
                 <div style={{ textAlign: 'center', padding: '24px 0' }}>
                   <div style={{ fontSize: '64px', marginBottom: '16px' }}>🏴</div>
-                  <h3 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 12px 0' }}>Nạp Token thành công!</h3>
+                  <h3 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 12px 0' }}>Nạp Credit thành công!</h3>
                   <p style={{ fontSize: '13px', color: '#888888', lineHeight: 1.6, margin: '0 0 24px 0' }}>
-                    Yêu cầu đã được xác thực thành công. Tài khoản của bạn được cộng thêm <strong>{selectedPackage === 'basic' ? '100.000' : selectedPackage === 'standard' ? '500.000' : '2.000.000'}</strong> tokens.
+                    Yêu cầu đã được xác thực thành công. Tài khoản của bạn được cộng thêm <strong>{selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}</strong> credit mua.
                   </p>
                   <button className="gt-btn-primary" style={{ width: '100%', background: '#ffffff', color: '#000000', border: 'none', fontWeight: 700 }} onClick={() => setIsRechargeOpen(false)}>Quay lại dịch thuật</button>
                 </div>
@@ -1975,7 +2156,7 @@ export default function Dashboard() {
                     <div style={{ fontSize: '11px', color: '#666666', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gói dịch vụ chọn mua:</div>
                     <div style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>
-                        {selectedPackage === 'basic' ? 'Gói Cơ bản (100k tokens)' : selectedPackage === 'standard' ? 'Gói Tiêu chuẩn (500k tokens)' : 'Gói Cao cấp (2M tokens)'}
+                        {selectedPackage === 'basic' ? 'Gói Cơ bản (+50.000 VNĐ)' : selectedPackage === 'standard' ? 'Gói Tiêu chuẩn (+200.000 VNĐ)' : 'Gói Cao cấp (+500.000 VNĐ)'}
                       </span>
                       <strong style={{ color: '#ffffff', fontSize: '17px' }}>
                         {selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}

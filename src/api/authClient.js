@@ -85,6 +85,71 @@ export async function loginWithEmail(email, password) {
 }
 
 /**
+ * Login with Google via popup integration using Firebase REST API.
+ */
+export async function loginWithGoogle() {
+  return new Promise((resolve, reject) => {
+    const width = 500;
+    const height = 650;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    
+    const popupUrl = FLASK_BASE_URL.replace('127.0.0.1', 'localhost');
+    const popup = window.open(
+      `${popupUrl}/auth/google`,
+      'Google Sign-In - IT Translator',
+      `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,status=1`
+    );
+
+    if (!popup) {
+      reject(new Error('Popup Blocker đã chặn cửa sổ đăng nhập Google. Vui lòng bật popup cho trang này.'));
+      return;
+    }
+
+    const messageListener = async (event) => {
+      if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+        window.removeEventListener('message', messageListener);
+        const { idToken } = event.data;
+        
+        try {
+          const flaskRes = await fetch(`${FLASK_BASE_URL}/api/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken }),
+          });
+
+          if (!flaskRes.ok) {
+            const err = await flaskRes.json();
+            reject(new Error(err.error || 'Đăng nhập Google thất bại tại máy chủ.'));
+            return;
+          }
+
+          const { uid, email, role, idToken: fbIdToken } = await flaskRes.json();
+          saveSession(uid, email, role, fbIdToken);
+          resolve({ uid, email, role });
+        } catch (err) {
+          reject(err);
+        }
+      } else if (event.data && event.data.type === 'GOOGLE_AUTH_ERROR') {
+        window.removeEventListener('message', messageListener);
+        reject(new Error(event.data.error || 'Lỗi đăng nhập Google.'));
+      }
+    };
+
+    window.addEventListener('message', messageListener);
+
+    const timer = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(timer);
+        setTimeout(() => {
+          window.removeEventListener('message', messageListener);
+        }, 1000);
+      }
+    }, 500);
+  });
+}
+
+/**
  * Log out and clear local session.
  */
 export function logout() {

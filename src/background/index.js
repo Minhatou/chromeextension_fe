@@ -162,17 +162,23 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   if (info.menuItemId === 'it-translator') {
     console.log('[Background] Context menu click: it-translator for text:', info.selectionText);
-    // Save request to storage immediately
-    chrome.storage.local.set({ 
-      pendingTranslation: { 
-        text: info.selectionText, 
-        context: '', 
-        target_lang: 'auto',
-        timestamp: Date.now() 
-      } 
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'TRIGGER_TRANSLATE_FROM_CONTEXT',
+      text: info.selectionText
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.log('[Background] Content script not loaded on this tab. Falling back to Side Panel.');
+        chrome.storage.local.set({ 
+          pendingTranslation: { 
+            text: info.selectionText, 
+            context: '', 
+            target_lang: 'auto',
+            timestamp: Date.now() 
+          } 
+        });
+        chrome.sidePanel.open({ tabId: tab.id });
+      }
     });
-    // Open the side panel
-    chrome.sidePanel.open({ tabId: tab.id });
   } else if (info.menuItemId === 'it-explainer') {
     console.log('[Background] Context menu click: it-explainer for text:', info.selectionText);
     // Try to send explain command to content script of the active tab

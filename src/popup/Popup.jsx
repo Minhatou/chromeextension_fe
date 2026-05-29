@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { checkStatus } from '../api/translationClient'
-import { loginWithEmail, registerWithEmail, logout, getSession } from '../api/authClient'
+import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle } from '../api/authClient'
 
 export default function Popup() {
   const [status, setStatus] = useState(null)
@@ -30,6 +30,31 @@ export default function Popup() {
     getSession().then(s => {
       setSession(s)
       setAuthLoading(false)
+      
+      if (s && s.idToken) {
+        console.log("[Auth Popup] Verifying and refreshing credits...");
+        fetch('http://127.0.0.1:5000/api/auth/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: s.idToken })
+        })
+          .then(r => {
+            if (r.ok) return r.json();
+            throw new Error();
+          })
+          .then(freshData => {
+            if (freshData.valid) {
+              const updatedSession = { ...s, ...freshData };
+              if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set({ authSession: updatedSession });
+              } else {
+                localStorage.setItem('authSession', JSON.stringify(updatedSession));
+              }
+              setSession(updatedSession);
+            }
+          })
+          .catch(() => {});
+      }
     })
 
     if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -58,6 +83,19 @@ export default function Popup() {
       setSession(s)
       setEmail('')
       setPassword('')
+    } catch (err) {
+      setAuthError(err.message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleGoogleAuth() {
+    setAuthError('')
+    setIsSubmitting(true)
+    try {
+      const s = await loginWithGoogle()
+      setSession(s)
     } catch (err) {
       setAuthError(err.message)
     } finally {
@@ -109,35 +147,37 @@ export default function Popup() {
         </button>
       </div>
 
-      {/* ── Backend Status Card ── */}
-      <div className="status-card" style={{ marginTop: '10px' }}>
-        {error ? (
-          <>
-            <div className="status-row error">
-              <span className="icon">🔴</span>
-              <span>Backend is <strong>offline</strong></span>
+      {/* ── Backend Status Card (Admin only) ── */}
+      {session?.role === 'admin' && (
+        <div className="status-card" style={{ marginTop: '10px' }}>
+          {error ? (
+            <>
+              <div className="status-row error">
+                <span className="icon">🔴</span>
+                <span>Backend is <strong>offline</strong></span>
+              </div>
+              <p className="hint">Start the Flask server:<br /><code>python app.py</code></p>
+            </>
+          ) : !status ? (
+            <div className="status-row checking">
+              <span className="spinner" />
+              <span>Connecting to backend...</span>
             </div>
-            <p className="hint">Start the Flask server:<br /><code>python app.py</code></p>
-          </>
-        ) : !status ? (
-          <div className="status-row checking">
-            <span className="spinner" />
-            <span>Connecting to backend...</span>
-          </div>
-        ) : (
-          <>
-            <div className={`status-row ${modelLoaded ? 'success' : 'warn'}`}>
-              <span className="icon">{modelLoaded ? '🟢' : '🟡'}</span>
-              <span>
-                Backend <strong>online</strong> · Model {modelLoaded ? 'loaded' : 'not loaded'}
-              </span>
-            </div>
-            {!modelLoaded && (
-              <p className="hint">The model is still loading. Wait a moment and reopen.</p>
-            )}
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <div className={`status-row ${modelLoaded ? 'success' : 'warn'}`}>
+                <span className="icon">{modelLoaded ? '🟢' : '🟡'}</span>
+                <span>
+                  Backend <strong>online</strong> · Model {modelLoaded ? 'loaded' : 'not loaded'}
+                </span>
+              </div>
+              {!modelLoaded && (
+                <p className="hint">The model is still loading. Wait a moment and reopen.</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Auth Section (only shown when backend is online) ── */}
       {online && (
@@ -219,6 +259,34 @@ export default function Popup() {
                 opacity: isSubmitting ? 0.7 : 1
               }}>
                 {isSubmitting ? 'Đang xử lý...' : (isRegistering ? 'Đăng ký' : 'Đăng nhập')}
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', margin: '4px 0', gap: '8px' }}>
+                <div style={{ flex: 1, height: '1px', background: '#e4e4e7' }}></div>
+                <span style={{ fontSize: '9px', color: '#a1a1aa', fontWeight: 600 }}>HOẶC</span>
+                <div style={{ flex: 1, height: '1px', background: '#e4e4e7' }}></div>
+              </div>
+              <button 
+                type="button" 
+                onClick={handleGoogleAuth} 
+                disabled={isSubmitting} 
+                style={{
+                  background: '#ffffff', color: '#18181b',
+                  border: '1px solid #e4e4e7', borderRadius: '8px', padding: '8px',
+                  fontSize: '12px', fontWeight: 600,
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  transition: 'background 0.2s'
+                }}
+                onMouseOver={e => e.currentTarget.style.backgroundColor = '#f4f4f5'}
+                onMouseOut={e => e.currentTarget.style.backgroundColor = '#ffffff'}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" style={{ display: 'inline-block' }}>
+                  <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.355 0 3.36 2.655 1.345 6.527l3.921 3.238z"/>
+                  <path fill="#4285F4" d="M23.455 12.273c0-.818-.073-1.609-.209-2.373H12v4.582h6.427a5.532 5.532 0 0 1-2.4 3.627l3.745 2.909c2.191-2.018 3.455-4.991 3.455-8.745z"/>
+                  <path fill="#FBBC05" d="M5.266 14.235A7.077 7.077 0 0 1 4.909 12c0-.791.136-1.555.357-2.235L1.345 6.527A11.954 11.954 0 0 0 0 12c0 2.018.5 3.918 1.382 5.6l3.884-3.365z"/>
+                  <path fill="#34A853" d="M12 24c3.245 0 5.973-1.073 7.964-2.91l-3.745-2.909c-1.036.691-2.364 1.109-3.964 1.109-3.055 0-5.645-2.064-6.564-4.836l-3.909 3.027C3.327 21.327 7.327 24 12 24z"/>
+                </svg>
+                Đăng nhập bằng Google
               </button>
             </form>
           )}

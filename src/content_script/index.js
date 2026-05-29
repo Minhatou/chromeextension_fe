@@ -8,6 +8,8 @@ let floatBtn = null;
 let overlayBox = null;
 let boxBody = null;
 let savedRange = null;
+let currentSourceText = '';
+let progressInterval = null;
 
 function renderMarkdown(text) {
   if (!text) return '';
@@ -315,6 +317,11 @@ function initShadowDOM() {
     .it-box.light-theme .it-md-code-block {
       color: #1a1a1a;
     }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
   `;
   shadowRoot.appendChild(style);
 
@@ -368,6 +375,7 @@ function initShadowDOM() {
       <div class="it-title">Translate Selection</div>
       <div class="it-controls">
         <button class="it-action-btn" id="theme-toggle">Light Mode</button>
+        <button class="it-action-btn" id="dislike-btn" title="Không thích bản dịch này">👎 Dislike</button>
         <button class="it-action-btn" id="copy">Copy</button>
         <button class="it-action-btn" id="close">Close</button>
       </div>
@@ -385,6 +393,53 @@ function initShadowDOM() {
     const btn = overlayBox.querySelector('#copy');
     btn.textContent = 'Copied!';
     setTimeout(() => btn.textContent = 'Copy', 2000);
+  };
+
+  const dislikeBtn = overlayBox.querySelector('#dislike-btn');
+  dislikeBtn.onclick = async () => {
+    if (!currentSourceText) return;
+    
+    const authResult = await new Promise(resolve => {
+      chrome.storage.local.get(['authSession'], resolve);
+    });
+    const session = authResult.authSession;
+    if (!session || !session.uid) {
+      showToast("Vui lòng đăng nhập để đánh giá bản dịch.");
+      return;
+    }
+    
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/translate/rate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: session.uid,
+          source: currentSourceText,
+          rating: 'dislike'
+        })
+      });
+      
+      if (response.ok) {
+        showToast("Đang dịch lại...");
+        dislikeBtn.style.color = '#ff4d4f';
+        dislikeBtn.innerHTML = `👎 Disliked`;
+        
+        // Instantly trigger translate again, which will bypass cache due to the 'dislike' rating
+        let targetLang = 'auto';
+        const titleEl = overlayBox.querySelector('.it-title');
+        if (titleEl) {
+          if (titleEl.textContent.includes('Giải thích')) targetLang = 'explain';
+          else if (titleEl.textContent.includes('Tóm tắt')) targetLang = 'summarize';
+          else if (titleEl.textContent.includes('Dịch ngược')) targetLang = 'english';
+        }
+        
+        onTranslateRequest(targetLang, currentSourceText);
+      } else {
+        showToast("Lỗi khi gửi đánh giá.");
+      }
+    } catch (err) {
+      showToast("Không kết nối được server.");
+    }
   };
 
   const themeBtn = overlayBox.querySelector('#theme-toggle');
@@ -419,6 +474,46 @@ function hideBtn() {
   if (floatBtn) floatBtn.style.display = 'none';
 }
 
+function startProgressBar() {
+  stopProgressBar();
+  
+  boxBody.innerHTML = `
+    <div style="padding: 16px 8px; display: flex; flex-direction: column; gap: 10px; font-family: 'Inter', -apple-system, sans-serif;">
+      <div style="font-size: 13px; color: #a1a1aa; text-align: left; font-weight: 600; display: flex; justify-content: space-between;">
+        <span>Đang dịch văn bản...</span>
+        <span id="it-progress-pct" style="color: #3b82f6; font-weight: 700;">0%</span>
+      </div>
+      <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.05); border-radius: 999px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); position: relative;">
+        <div id="it-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); border-radius: 999px; transition: width 0.3s ease;"></div>
+      </div>
+      <div style="font-size: 11px; color: #71717a; text-align: left;">Hệ thống AI đang phân tích ngữ cảnh và dịch thuật ngữ IT...</div>
+    </div>
+  `;
+
+  const fillEl = boxBody.querySelector('#it-progress-fill');
+  const pctEl = boxBody.querySelector('#it-progress-pct');
+  
+  let progress = 0;
+  progressInterval = setInterval(() => {
+    if (progress < 85) {
+      progress += Math.floor(Math.random() * 15) + 5;
+      if (progress > 85) progress = 85;
+    } else if (progress < 96) {
+      progress += 1;
+    }
+    
+    if (fillEl) fillEl.style.width = `${progress}%`;
+    if (pctEl) pctEl.textContent = `${progress}%`;
+  }, 250);
+}
+
+function stopProgressBar() {
+  if (progressInterval) {
+    clearInterval(progressInterval);
+    progressInterval = null;
+  }
+}
+
 function showBox(rect) {
   initShadowDOM();
   overlayBox.style.display = 'flex';
@@ -427,26 +522,127 @@ function showBox(rect) {
   const boxWidth = overlayBox.offsetWidth || 640;
   const halfWidth = boxWidth / 2;
 
-  // Position box below selection
-  let top = window.scrollY + rect.bottom + 15;
-  let left = window.scrollX + rect.left + rect.width / 2 - halfWidth; // Center under selection
+  let top, left;
+  if (!rect || (rect.bottom === 200 && rect.left === 200 && rect.top === 100)) {
+    // Center in viewport
+    top = window.scrollY + (window.innerHeight - 320) / 2;
+    left = window.scrollX + (window.innerWidth - boxWidth) / 2;
+  } else {
+    // Position box below selection
+    top = window.scrollY + rect.bottom + 15;
+    left = window.scrollX + rect.left + rect.width / 2 - halfWidth; // Center under selection
 
-  // Clamp left (avoid overflowing right edge of screen: boxWidth + 20px padding)
-  left = Math.max(20, Math.min(left, window.innerWidth - (boxWidth + 20)));
+    // Clamp left (avoid overflowing right edge of screen: boxWidth + 20px padding)
+    left = Math.max(20, Math.min(left, window.innerWidth - (boxWidth + 20)));
 
-  // Flip to top if no space below
-  if (top + 300 > window.scrollY + window.innerHeight) {
-    top = window.scrollY + rect.top - 320;
+    // Flip to top if no space below
+    if (top + 300 > window.scrollY + window.innerHeight) {
+      top = window.scrollY + rect.top - 320;
+    }
   }
 
   overlayBox.style.top = `${top}px`;
   overlayBox.style.left = `${left}px`;
-  boxBody.innerHTML = '<i>Processing...</i>';
+  
+  // Start the beautiful progress bar animation
+  startProgressBar();
+
+  const dislikeBtn = overlayBox.querySelector('#dislike-btn');
+  if (dislikeBtn) {
+    dislikeBtn.style.color = 'inherit';
+    dislikeBtn.innerHTML = `👎 Dislike`;
+  }
 }
 
 function hideBox() {
   console.log('[ContentScript] Hiding overlayBox');
   if (overlayBox) overlayBox.style.display = 'none';
+}
+
+function showLoginRequiredPopup(rect) {
+  initShadowDOM();
+  hideBtn();
+  
+  if (!rect) {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      rect = selection.getRangeAt(0).getBoundingClientRect();
+    }
+  }
+
+  showBox(rect || { bottom: 200, left: 200, width: 100, top: 100 });
+  
+  const titleEl = overlayBox.querySelector('.it-title');
+  if (titleEl) {
+    titleEl.textContent = 'Yêu cầu đăng nhập';
+  }
+
+  boxBody.innerHTML = `
+    <div style="
+      text-align: center; 
+      padding: 30px 20px; 
+      font-family: 'Inter', -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    ">
+      <div style="
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: rgba(239, 68, 68, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        margin-bottom: 8px;
+        animation: pulse 2s infinite;
+      ">🔒</div>
+      <h3 style="margin: 0; font-size: 18px; font-weight: 700; color: #ef4444;">Tính năng yêu cầu đăng nhập</h3>
+      <p style="
+        margin: 0; 
+        color: #a1a1aa; 
+        font-size: 14px; 
+        line-height: 1.5;
+        max-width: 320px;
+      ">Vui lòng đăng nhập tài khoản IT Translator để sử dụng các tính năng dịch thuật, giải thích thuật ngữ và tóm tắt.</p>
+      
+      <button id="it-popup-login-btn" style="
+        margin-top: 10px;
+        background: #ffffff; 
+        color: #000000; 
+        font-weight: 700; 
+        padding: 12px 28px; 
+        border-radius: 999px; 
+        border: none;
+        font-size: 14px; 
+        cursor: pointer; 
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
+      ">Đăng nhập ngay</button>
+    </div>
+  `;
+
+  const loginBtn = boxBody.querySelector('#it-popup-login-btn');
+  if (loginBtn) {
+    loginBtn.onclick = () => {
+      const url = typeof chrome !== 'undefined' && chrome.runtime
+        ? chrome.runtime.getURL('src/dashboard/index.html')
+        : '/src/dashboard/index.html';
+      window.open(url, '_blank');
+      hideBox();
+    };
+    loginBtn.onmouseover = () => { 
+      loginBtn.style.background = '#e5e5e5';
+      loginBtn.style.transform = 'translateY(-1px)';
+    };
+    loginBtn.onmouseout = () => { 
+      loginBtn.style.background = '#ffffff'; 
+      loginBtn.style.transform = 'translateY(0)';
+    };
+  }
 }
 
 // Simple heuristic: checks if text is predominantly Vietnamese
@@ -490,6 +686,7 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
   }
 
   if (!text) return;
+  currentSourceText = text;
 
   // Auto-detect Vietnamese: if 'auto' mode and text is Vietnamese, translate to English
   if (targetLang === 'auto' && isVietnamese(text)) {
@@ -520,13 +717,22 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
   console.log('Target Lang:', targetLang);
   console.log('───────────────────────────');
 
-  if (targetLang === 'english' || targetLang === 'explain' || targetLang === 'summarize') {
+  if (targetLang === 'auto' || targetLang === 'english' || targetLang === 'explain' || targetLang === 'summarize') {
     try {
       const authResult = await new Promise(resolve => {
-        chrome.storage.local.get(['authSession'], resolve);
+        chrome.storage.local.get(['authSession', 'modelId', 'shareTranslation'], resolve);
       });
       const session = authResult.authSession;
-      const userId = (session && session.uid) ? session.uid : 'anonymous';
+      
+      // Guest blocker: enforce login requirements
+      if (!session || !session.uid) {
+        showLoginRequiredPopup(rect);
+        return;
+      }
+
+      const userId = session.uid;
+      const modelId = authResult.modelId || 'qwen2';
+      const shareTranslation = authResult.shareTranslation === true;
 
       const response = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
@@ -537,30 +743,24 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
           target_lang: targetLang,
           glossary: {},
           glossary_mode: 'both',
-          user_id: userId
+          user_id: userId,
+          model_id: modelId,
+          share_translation: shareTranslation
         }),
       });
       if (response.ok) {
         const data = await response.json();
+        stopProgressBar();
         boxBody.innerHTML = renderMarkdown(data.translation);
       } else {
-        boxBody.innerHTML = `<i style="color: #ff4a4a;">Lỗi ${targetLang === 'explain' ? 'giải thích thuật ngữ' : targetLang === 'summarize' ? 'tóm tắt' : 'dịch ngược'}.</i>`;
+        stopProgressBar();
+        boxBody.innerHTML = `<i style="color: #ff4a4a;">Lỗi ${targetLang === 'explain' ? 'giải thích thuật ngữ' : targetLang === 'summarize' ? 'tóm tắt' : 'dịch thuật'}.</i>`;
       }
     } catch (err) {
+      stopProgressBar();
       boxBody.innerHTML = '<i style="color: #ff4a4a;">Không kết nối được server.</i>';
     }
     return;
-  }
-
-  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-    chrome.runtime.sendMessage({
-      type: 'TRANSLATE_TEXT',
-      text: text,
-      context: context
-    });
-  } else {
-    console.error('[ContentScript] chrome.runtime.sendMessage is not available. Extension context might be invalidated. Please refresh the page.');
-    boxBody.innerHTML = '<i style="color: #ff4a4a;">Lỗi: Extension đã được nạp lại hoặc mất kết nối. Vui lòng F5 (tải lại trang) để tiếp tục sử dụng.</i>';
   }
 }
 
@@ -570,8 +770,8 @@ chrome.runtime.onMessage.addListener((message) => {
     console.log('[ContentScript] Received GENERATE_PROGRESS:', message.payload.partialText, 'done:', message.payload.done);
     if (overlayBox && overlayBox.style.display === 'flex') {
       const { partialText, done } = message.payload;
-      if (boxBody.innerHTML === '<i>Processing...</i>') boxBody.innerHTML = '';
-
+      stopProgressBar();
+      
       console.log('[ContentScript] Updating boxBody.innerHTML to rendered markdown');
       boxBody.innerHTML = renderMarkdown(partialText);
 
@@ -602,6 +802,15 @@ chrome.runtime.onMessage.addListener((message) => {
       savedRange = selection.getRangeAt(0);
     }
     onTranslateRequest('explain', message.text);
+  }
+
+  if (message.type === 'TRIGGER_TRANSLATE_FROM_CONTEXT') {
+    console.log('[ContentScript] Received TRIGGER_TRANSLATE_FROM_CONTEXT message for text:', message.text);
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      savedRange = selection.getRangeAt(0);
+    }
+    onTranslateRequest('auto', message.text);
   }
 });
 
@@ -656,7 +865,12 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
       });
 
       const session = glossaryResult.authSession;
-      const userId = (session && session.uid) ? session.uid : 'anonymous';
+      if (!session || !session.uid) {
+        activeEl.value = value;
+        showLoginRequiredPopup();
+        return;
+      }
+      const userId = session.uid;
 
       const response = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
@@ -712,7 +926,11 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
         chrome.storage.local.get(['authSession'], resolve);
       });
       const session = authResult.authSession;
-      const userId = (session && session.uid) ? session.uid : 'anonymous';
+      if (!session || !session.uid) {
+        showLoginRequiredPopup();
+        return;
+      }
+      const userId = session.uid;
 
       const response = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
@@ -808,7 +1026,11 @@ async function translatePage() {
   });
 
   const session = glossaryResult.authSession;
-  const userId = (session && session.uid) ? session.uid : 'anonymous';
+  if (!session || !session.uid) {
+    showLoginRequiredPopup();
+    return;
+  }
+  const userId = session.uid;
 
   console.log(`[IT Translator] Translating page. Glossary: Enabled=${enabled}, Mode=${glossaryMode}, User=${userId}`);
   if (enabled && glossary.length > 0) {
