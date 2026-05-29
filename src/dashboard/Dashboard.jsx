@@ -1694,106 +1694,126 @@ export default function Dashboard() {
           </div>
         )}
 
-        {activeFooterTab === 'recharge' && (
-          <div className="gt-panel glass">
-            <div className="panel-header">
-              <h3>💎 Nạp thêm Credit dịch thuật (VNĐ)</h3>
-              <span style={{ fontSize: '13px', color: '#60a5fa', fontWeight: 600 }}>
-                Số dư: {totalCredit === -1 ? 'Vô hạn' : `${totalCredit.toLocaleString('vi-VN')}đ`} (Miễn phí: {freeCredit.toLocaleString('vi-VN')}đ, Đã mua: {purchasedCredit.toLocaleString('vi-VN')}đ)
-              </span>
+      </main>
+
+      {/* Packages / Recharge Selection Modal */}
+      {activeFooterTab === 'recharge' && (
+        <div className="gt-modal-overlay" onClick={() => setActiveFooterTab(null)}>
+          <div className="gt-modal-content glass animate-slide-up" style={{ maxWidth: '880px', background: 'rgba(15, 15, 15, 0.98)', border: '1px solid rgba(255, 255, 255, 0.25)', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="gt-modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>💎 Chọn Gói Nạp Credit dịch thuật (VNĐ)</h2>
+              <button className="gt-modal-close" onClick={() => setActiveFooterTab(null)} style={{ color: '#aaa' }}>×</button>
             </div>
-            
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '20px', padding: '10px 0 20px 0'
-            }}>
-              {/* Basic Package */}
-              <div style={{
-                background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)',
-                borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
-                justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
-                boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
-              }} className="pricing-card" onClick={() => handleOpenRechargeModal('basic')}>
-                <div>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#94a3b8' }}>Gói Cơ Bản</h4>
-                  <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                    +50.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
-                  </div>
-                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
-                    Phù hợp cho lập trình viên dịch tài liệu nhỏ hoặc dùng thử model mới.
-                  </p>
+
+            <div className="gt-modal-body" style={{ color: '#fff', padding: '15px 0 0 0' }}>
+              <div style={{ 
+                marginBottom: '20px', fontSize: '14px', color: '#fff', background: 'rgba(59, 130, 246, 0.08)', 
+                padding: '14px 18px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)',
+                lineHeight: '1.6', display: 'flex', flexDirection: 'column', gap: '4px'
+              }}>
+                <div style={{ color: '#60a5fa', fontWeight: 700, fontSize: '15px' }}>
+                  💰 Số dư hiện tại của bạn: {totalCredit === -1 ? 'Vô hạn' : `${totalCredit.toLocaleString('vi-VN')} VNĐ`}
                 </div>
-                <div>
-                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>50.000 VNĐ</div>
-                  <button style={{
-                    width: '100%', padding: '10px', background: '#3b82f6', color: '#fff',
-                    border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}>Mua ngay</button>
+                <div style={{ color: '#94a3b8', fontSize: '13px', paddingLeft: '22px' }}>
+                  • Miễn phí: {freeCredit.toLocaleString('vi-VN')} VNĐ
+                </div>
+                <div style={{ color: '#94a3b8', fontSize: '13px', paddingLeft: '22px' }}>
+                  • Đã mua: {purchasedCredit.toLocaleString('vi-VN')} VNĐ
                 </div>
               </div>
-
-              {/* Standard Package */}
+              
               <div style={{
-                background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(59, 130, 246, 0.15))',
-                border: '2px solid #3b82f6',
-                borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
-                justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
-                position: 'relative', boxShadow: '0 8px 25px rgba(59, 130, 246, 0.2)'
-              }} className="pricing-card" onClick={() => handleOpenRechargeModal('standard')}>
-                <span style={{
-                  position: 'absolute', top: '-10px', right: '15px', background: '#3b82f6',
-                  color: '#fff', fontSize: '10px', fontWeight: 700, padding: '2px 8px',
-                  borderRadius: '10px', textTransform: 'uppercase'
-                }}>Bán chạy nhất</span>
-                <div>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#38bdf8' }}>Gói Tiêu Chuẩn</h4>
-                  <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                    +200.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
+                display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '20px', paddingBottom: '10px'
+              }}>
+                {/* Basic Package */}
+                <div style={{
+                  background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
+                  justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                }} className="pricing-card" onClick={() => { handleOpenRechargeModal('basic'); setActiveFooterTab(null); }}>
+                  <div>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#94a3b8' }}>Gói Cơ Bản</h4>
+                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
+                      +50.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                      Phù hợp cho lập trình viên dịch tài liệu nhỏ hoặc dùng thử model mới.
+                    </p>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
-                    Gói tối ưu nhất cho công việc dịch thuật hàng ngày, giải thích code và tài liệu IT lớn.
-                  </p>
+                  <div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>50.000 VNĐ</div>
+                    <button style={{
+                      width: '100%', padding: '10px', background: '#3b82f6', color: '#fff',
+                      border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}>Mua ngay</button>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>200.000 VNĐ</div>
-                  <button style={{
-                    width: '100%', padding: '10px', background: '#3b82f6', color: '#fff',
-                    border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
-                    transition: 'all 0.2s ease', boxShadow: '0 4px 12px rgba(59,130,246,0.3)'
-                  }}>Mua ngay</button>
-                </div>
-              </div>
 
-              {/* Premium Package */}
-              <div style={{
-                background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)',
-                borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
-                justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
-                boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
-              }} className="pricing-card" onClick={() => handleOpenRechargeModal('premium')}>
-                <div>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#a78bfa' }}>Gói Cao Cấp</h4>
-                  <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                    +500.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
+                {/* Standard Package */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(59, 130, 246, 0.15))',
+                  border: '2px solid #3b82f6',
+                  borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
+                  justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
+                  position: 'relative', boxShadow: '0 8px 25px rgba(59, 130, 246, 0.2)'
+                }} className="pricing-card" onClick={() => { handleOpenRechargeModal('standard'); setActiveFooterTab(null); }}>
+                  <span style={{
+                    position: 'absolute', top: '-10px', right: '15px', background: '#3b82f6',
+                    color: '#fff', fontSize: '10px', fontWeight: 700, padding: '2px 8px',
+                    borderRadius: '10px', textTransform: 'uppercase'
+                  }}>Bán chạy nhất</span>
+                  <div>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#38bdf8' }}>Gói Tiêu Chuẩn</h4>
+                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
+                      +200.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                      Gói tối ưu nhất cho công việc dịch thuật hàng ngày, giải thích code và tài liệu IT lớn.
+                    </p>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
-                    Dành cho doanh nghiệp hoặc lập trình viên chuyên nghiệp dịch khối lượng văn bản khổng lồ.
-                  </p>
+                  <div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>200.000 VNĐ</div>
+                    <button style={{
+                      width: '100%', padding: '10px', background: '#3b82f6', color: '#fff',
+                      border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
+                      transition: 'all 0.2s ease', boxShadow: '0 4px 12px rgba(59,130,246,0.3)'
+                    }}>Mua ngay</button>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>500.000 VNĐ</div>
-                  <button style={{
-                    width: '100%', padding: '10px', background: '#a78bfa', color: '#1e1b4b',
-                    border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}>Mua ngay</button>
+
+                {/* Premium Package */}
+                <div style={{
+                  background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
+                  justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                }} className="pricing-card" onClick={() => { handleOpenRechargeModal('premium'); setActiveFooterTab(null); }}>
+                  <div>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#a78bfa' }}>Gói Cao Cấp</h4>
+                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
+                      +500.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                      Dành cho doanh nghiệp hoặc lập trình viên chuyên nghiệp dịch khối lượng văn bản khổng lồ.
+                    </p>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#a78bfa', marginBottom: '12px' }}>500.000 VNĐ</div>
+                    <button style={{
+                      width: '100%', padding: '10px', background: '#a78bfa', color: '#1e1b4b',
+                      border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}>Mua ngay</button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        )}
-      </main>
+        </div>
+      )}
 
       {/* Settings Modal */}
       {isSettingsOpen && (
@@ -2164,119 +2184,25 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Payment Method Tabs (B&W Minimalist) */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-                    <button
-                      style={{
-                        flex: 1, padding: '10px', borderRadius: '8px', border: paymentMethod === 'qr' ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
-                        background: paymentMethod === 'qr' ? '#ffffff' : 'transparent', color: paymentMethod === 'qr' ? '#000000' : '#ffffff', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
-                      }}
-                      onClick={() => setPaymentMethod('qr')}
-                    >
-                      📲 Quét mã QR
-                    </button>
-                    <button
-                      style={{
-                        flex: 1, padding: '10px', borderRadius: '8px', border: paymentMethod === 'card' ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
-                        background: paymentMethod === 'card' ? '#ffffff' : 'transparent', color: paymentMethod === 'card' ? '#000000' : '#ffffff', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
-                      }}
-                      onClick={() => setPaymentMethod('card')}
-                    >
-                      💳 Thẻ tín dụng
-                    </button>
+                  {/* QR Code from Public */}
+                  <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                    <div style={{
+                      background: '#ffffff', padding: '10px', borderRadius: '8px', display: 'inline-block',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.5)', marginBottom: '16px'
+                    }}>
+                      <img 
+                        src="/qr.jpg" 
+                        alt="Mã QR Thanh toán" 
+                        style={{ width: '220px', height: 'auto', borderRadius: '6px', display: 'block' }} 
+                      />
+                    </div>
+                    <p style={{ fontSize: '13px', color: '#888888', lineHeight: 1.5, margin: '0 0 10px 0' }}>
+                      Quét mã QR bằng ứng dụng ngân hàng của bạn để thực hiện chuyển khoản.
+                    </p>
+                    <p style={{ fontSize: '11px', color: '#555555', margin: '0 0 15px 0', lineHeight: 1.4 }}>
+                      Sau khi thanh toán thành công, vui lòng nhấn nút <strong>Xác nhận Thanh toán</strong> bên dưới để hệ thống xử lý giao dịch và tự động cộng Credit mua.
+                    </p>
                   </div>
-
-                  {paymentMethod === 'qr' ? (
-                    <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                      <div style={{
-                        background: '#ffffff', padding: '14px', borderRadius: '8px', display: 'inline-block',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.5)', marginBottom: '16px'
-                      }}>
-                        {/* Stark Black & White VietQR mockup */}
-                        <div style={{
-                          width: '180px', height: '180px', background: '#ffffff', borderRadius: '4px',
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                          border: '3px solid #000000', position: 'relative'
-                        }}>
-                          <div style={{ fontWeight: 900, color: '#000000', fontSize: '18px', marginBottom: '4px', letterSpacing: '1px' }}>VIETQR</div>
-                          <div style={{
-                            width: '110px', height: '110px', background: 'repeating-conic-gradient(#000 0% 25%, #fff 0% 50%) 50% / 10px 10px',
-                            border: '2px solid #000000'
-                          }}></div>
-                          <div style={{ fontSize: '8px', fontWeight: 800, color: '#000000', marginTop: '8px', letterSpacing: '0.5px' }}>MINIMALIST PAYMENT</div>
-                        </div>
-                      </div>
-                      <p style={{ fontSize: '12px', color: '#666666', lineHeight: 1.5, margin: '0 0 10px 0' }}>
-                        Quét mã QR bằng ứng dụng ngân hàng của bạn để thanh toán ngay lập tức. Số dư token sẽ đồng bộ tự động.
-                      </p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {/* Monochromatic Premium Credit Card */}
-                      <div style={{
-                        background: 'linear-gradient(135deg, #000000, #222222)', borderRadius: '8px',
-                        padding: '18px', color: '#ffffff', minHeight: '130px', display: 'flex', flexDirection: 'column',
-                        justifyContent: 'space-between', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 4px 20px rgba(0,0,0,0.6)'
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <span style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '1.5px' }}>VISA</span>
-                          <span style={{ fontSize: '8px', opacity: 0.5, letterSpacing: '1px' }}>PREMIUM BLACK</span>
-                        </div>
-                        <div style={{ fontSize: '17px', letterSpacing: '2px', fontFamily: 'monospace', margin: '14px 0', color: '#fff' }}>
-                          {creditCardNum || '•••• •••• •••• ••••'}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
-                          <div>
-                            <span style={{ opacity: 0.4, display: 'block', fontSize: '7px', marginBottom: '2px' }}>CHỦ THẺ</span>
-                            <strong style={{ letterSpacing: '0.5px' }}>MEMBER USER</strong>
-                          </div>
-                          <div>
-                            <span style={{ opacity: 0.4, display: 'block', fontSize: '7px', marginBottom: '2px' }}>HẠN DÙNG</span>
-                            <strong style={{ letterSpacing: '0.5px' }}>{creditCardExp || 'MM/YY'}</strong>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: '10px' }}>
-                        <label style={{ fontSize: '11px', color: '#666666', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Số thẻ</label>
-                        <input
-                          type="text"
-                          className="gt-input"
-                          maxLength="19"
-                          placeholder="4000 1234 5678 9010"
-                          value={creditCardNum}
-                          onChange={(e) => setCreditCardNum(e.target.value.replace(/[^\d\s]/g, ''))}
-                          style={{ width: '100%', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: '11px', color: '#666666', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Hạn dùng</label>
-                          <input
-                            type="text"
-                            className="gt-input"
-                            maxLength="5"
-                            placeholder="MM/YY"
-                            value={creditCardExp}
-                            onChange={(e) => setCreditCardExp(e.target.value)}
-                            style={{ width: '100%', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
-                          />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: '11px', color: '#666666', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>CVV</label>
-                          <input
-                            type="password"
-                            className="gt-input"
-                            maxLength="3"
-                            placeholder="***"
-                            value={creditCardCvv}
-                            onChange={(e) => setCreditCardCvv(e.target.value.replace(/\D/g, ''))}
-                            style={{ width: '100%', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   <div style={{ marginTop: '28px', display: 'flex', gap: '10px' }}>
                     <button
