@@ -514,6 +514,8 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .truncate {
+  display: inline-block;
+  vertical-align: bottom;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

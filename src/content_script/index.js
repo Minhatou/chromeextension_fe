@@ -9,6 +9,72 @@ let overlayBox = null;
 let boxBody = null;
 let savedRange = null;
 
+function renderMarkdown(text) {
+  if (!text) return '';
+
+  // Escape HTML to prevent XSS
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+  // 1. Block code blocks: ```lang\ncode\n```
+  html = html.replace(/```(?:[a-zA-Z0-9+#-]+)?\n([\s\S]*?)\n```/g, (match, code) => {
+    return `<pre class="it-md-pre"><code class="it-md-code-block">${code}</code></pre>`;
+  });
+  html = html.replace(/```(?:[a-zA-Z0-9+#-]+)?([\s\S]*?)```/g, (match, code) => {
+    return `<pre class="it-md-pre"><code class="it-md-code-block">${code}</code></pre>`;
+  });
+
+  // 2. Inline code: `code`
+  html = html.replace(/`([^`\n]+)`/g, '<code class="it-md-code">$1</code>');
+
+  // 3. Headers: ###, ##, #
+  html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+
+  // 4. Bold: **text** or __text__
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+  // 5. Italic: *text* or _text_
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+
+  // 6. Lists: * or - at start of line
+  html = html.replace(/^\s*[-*]\s+(.*?)$/gm, '<li>$1</li>');
+  
+  // Group adjacent <li> tags into <ul>
+  html = html.replace(/(<li>[\s\S]*?<\/li>)/g, (match) => {
+    return `<ul>${match}</ul>`;
+  });
+  // Clean up nested <ul><ul>
+  html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+  // 7. Ordered lists: 1. 2. 3.
+  html = html.replace(/^\s*\d+\.\s+(.*?)$/gm, '<li class="it-md-ol-item">$1</li>');
+  html = html.replace(/((?:<li class="it-md-ol-item">.*?<\/li>\s*)+)/g, '<ol>$1</ol>');
+  html = html.replace(/<li class="it-md-ol-item">/g, '<li>');
+
+  // 8. Linebreaks: replace newlines with <br> unless they are in pre tags
+  const parts = html.split(/(<pre[\s\S]*?<\/pre>)/g);
+  for (let i = 0; i < parts.length; i++) {
+    if (!parts[i].startsWith('<pre')) {
+      parts[i] = parts[i].replace(/\n/g, '<br>');
+    }
+  }
+  html = parts.join('');
+
+  // Clean up double <br> or <br> right after/before block elements to prevent too much spacing
+  html = html.replace(/<br>\s*<(ul|ol|li|pre|h1|h2|h3)/gi, '<$1');
+  html = html.replace(/<\/(ul|ol|li|pre|h1|h2|h3)>\s*<br>/gi, '</$1>');
+
+  return html;
+}
+
 function initShadowDOM() {
   if (document.getElementById(CONTAINER_ID)) return;
 
@@ -405,14 +471,14 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
       const end = activeEl.selectionEnd;
       if (start !== end) {
         text = activeEl.value.substring(start, end).trim();
-        context = activeEl.value.slice(0, 1000);
+        context = activeEl.value.slice(0, 3000);
         rect = activeEl.getBoundingClientRect();
       }
     }
     
     if (!text && savedRange) {
       text = savedRange.toString().trim();
-      context = savedRange.commonAncestorContainer.parentElement.innerText.slice(0, 600);
+      context = savedRange.commonAncestorContainer.parentElement.innerText.slice(0, 2000);
       rect = savedRange.getBoundingClientRect();
     }
   } else {
@@ -456,6 +522,12 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
 
   if (targetLang === 'english' || targetLang === 'explain' || targetLang === 'summarize') {
     try {
+      const authResult = await new Promise(resolve => {
+        chrome.storage.local.get(['authSession'], resolve);
+      });
+      const session = authResult.authSession;
+      const userId = (session && session.uid) ? session.uid : 'anonymous';
+
       const response = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -464,7 +536,8 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
           context: context, 
           target_lang: targetLang,
           glossary: {},
-          glossary_mode: 'both'
+          glossary_mode: 'both',
+          user_id: userId
         }),
       });
       if (response.ok) {
@@ -572,7 +645,7 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
     
     try {
       const glossaryResult = await new Promise(resolve => {
-        chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode'], resolve);
+        chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode', 'authSession'], resolve);
       });
       const enabled = glossaryResult.glossaryEnabled !== false;
       const glossaryMode = glossaryResult.glossaryMode || 'both';
@@ -582,6 +655,9 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
         if (g.term && g.meaning) glossaryDict[g.term] = g.meaning;
       });
 
+      const session = glossaryResult.authSession;
+      const userId = (session && session.uid) ? session.uid : 'anonymous';
+
       const response = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -590,7 +666,8 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
           context: '', 
           target_lang: 'english',
           glossary: glossaryDict,
-          glossary_mode: glossaryMode
+          glossary_mode: glossaryMode,
+          user_id: userId
         }),
       });
       
@@ -631,6 +708,12 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
     }
     
     try {
+      const authResult = await new Promise(resolve => {
+        chrome.storage.local.get(['authSession'], resolve);
+      });
+      const session = authResult.authSession;
+      const userId = (session && session.uid) ? session.uid : 'anonymous';
+
       const response = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -639,7 +722,8 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
           context: '', 
           target_lang: 'english',
           glossary: {},
-          glossary_mode: 'both'
+          glossary_mode: 'both',
+          user_id: userId
         }),
       });
       
@@ -709,7 +793,7 @@ async function translatePage() {
 
   // Đọc từ điển từ chrome.storage.local
   const glossaryResult = await new Promise(resolve => {
-    chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode'], resolve);
+    chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode', 'authSession'], resolve);
   });
   
   const enabled = glossaryResult.glossaryEnabled !== false;
@@ -723,7 +807,10 @@ async function translatePage() {
     }
   });
 
-  console.log(`[IT Translator] Translating page. Glossary: Enabled=${enabled}, Mode=${glossaryMode}`);
+  const session = glossaryResult.authSession;
+  const userId = (session && session.uid) ? session.uid : 'anonymous';
+
+  console.log(`[IT Translator] Translating page. Glossary: Enabled=${enabled}, Mode=${glossaryMode}, User=${userId}`);
   if (enabled && glossary.length > 0) {
     console.log(`[IT Translator] 📚 Từ điển hiện tại đang sử dụng:`, glossaryDict);
   }
@@ -743,7 +830,8 @@ async function translatePage() {
           context: '', 
           target_lang: 'auto',
           glossary: glossaryDict,
-          glossary_mode: glossaryMode
+          glossary_mode: glossaryMode,
+          user_id: userId
         }),
       });
       

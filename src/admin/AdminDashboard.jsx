@@ -8,7 +8,7 @@ import {
   CheckCircleOutlined, CloseCircleOutlined, WarningOutlined,
   SunOutlined, MoonOutlined, LockOutlined, SafetyCertificateOutlined,
   CloudOutlined, RobotOutlined, SettingOutlined, CheckOutlined,
-  StopOutlined
+  StopOutlined, BulbOutlined
 } from '@ant-design/icons';
 
 const API = 'http://127.0.0.1:5000';
@@ -485,6 +485,124 @@ function GlossaryTab({ uid, toast }) {
   );
 }
 
+// ── Contributions Tab ─────────────────────────────────────────────────────────
+function ContributionsTab({ uid, toast }) {
+  const [contributions, setContributions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchContributions = useCallback(() => {
+    setLoading(true);
+    apiPost('/api/admin/contributions', { uid })
+      .then(d => {
+        if (d.contributions) setContributions(d.contributions);
+      })
+      .catch(() => toast('Không thể tải các bản dịch đóng góp', 'error'))
+      .finally(() => setLoading(false));
+  }, [uid]);
+
+  useEffect(() => {
+    fetchContributions();
+  }, [fetchContributions]);
+
+  const handleAction = async (contribId, action) => {
+    const actionLabel = action === 'approved' ? 'phê duyệt' : action === 'rejected' ? 'từ chối' : 'xóa';
+    if (!window.confirm(`Bạn có chắc chắn muốn ${actionLabel} đóng góp này?`)) return;
+
+    try {
+      const res = await apiPost('/api/admin/contributions/action', { uid, id: contribId, action });
+      if (res.success) {
+        toast(`Đã thực hiện ${actionLabel} thành công!`);
+        if (action === 'delete') {
+          setContributions(prev => prev.filter(c => c.id !== contribId));
+        } else {
+          setContributions(prev => prev.map(c => c.id === contribId ? { ...c, status: action } : c));
+        }
+      } else {
+        toast(res.error || 'Thao tác thất bại', 'error');
+      }
+    } catch (err) {
+      toast('Lỗi kết nối máy chủ', 'error');
+    }
+  };
+
+  return (
+    <div>
+      <div className="admin-section-title">Bản dịch đóng góp từ người dùng</div>
+      <div className="admin-section-desc">Xem xét các bản dịch đề xuất từ người dùng để cải thiện chất lượng dịch thuật. Đóng góp được phê duyệt sẽ tự động thêm vào Thuật ngữ hệ thống.</div>
+
+      <div className="admin-card">
+        <div className="admin-card-header">
+          <span className="admin-card-title">
+            Danh sách đóng góp
+            <span className="badge-count">{contributions.length}</span>
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={fetchContributions} disabled={loading}>
+            <ReloadOutlined spin={loading} /> Làm mới
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="admin-empty"><span className="admin-spinner" /></div>
+        ) : contributions.length === 0 ? (
+          <div className="admin-empty">Không có đóng góp nào.</div>
+        ) : (
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Người đóng góp</th>
+                <th>Văn bản gốc</th>
+                <th>Bản dịch AI</th>
+                <th>Bản dịch đề xuất</th>
+                <th>Trạng thái</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contributions.map(c => (
+                <tr key={c.id}>
+                  <td style={{ fontSize: '12px' }}>
+                    <strong>{c.email || 'Ẩn danh'}</strong>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '10px', fontFamily: 'monospace' }}>{c.user_id}</div>
+                  </td>
+                  <td><span className="truncate" title={c.source_text}>{c.source_text}</span></td>
+                  <td><span className="truncate" style={{ textDecoration: 'line-through', opacity: 0.6 }} title={c.original_translation}>{c.original_translation}</span></td>
+                  <td><span className="truncate" style={{ color: 'var(--success)', fontWeight: 600 }} title={c.suggested_translation}>{c.suggested_translation}</span></td>
+                  <td>
+                    <span className={`role-badge ${c.status || 'pending'}`} style={{
+                      background: c.status === 'approved' ? 'rgba(16, 185, 129, 0.1)' : c.status === 'rejected' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                      color: c.status === 'approved' ? '#10b981' : c.status === 'rejected' ? '#ef4444' : '#f59e0b',
+                      border: 'none', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600
+                    }}>
+                      {c.status === 'approved' ? 'Đã duyệt' : c.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {(!c.status || c.status === 'pending') && (
+                        <>
+                          <button className="btn btn-ghost btn-sm" style={{ color: '#10b981' }} onClick={() => handleAction(c.id, 'approved')}>
+                            <CheckOutlined /> Duyệt
+                          </button>
+                          <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }} onClick={() => handleAction(c.id, 'rejected')}>
+                            <CloseOutlined /> Từ chối
+                          </button>
+                        </>
+                      )}
+                      <button className="btn btn-danger btn-sm" onClick={() => handleAction(c.id, 'delete')}>
+                        <DeleteOutlined />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Status Tab ────────────────────────────────────────────────────────────────
 function StatusTab() {
   const [status, setStatus] = useState(null);
@@ -632,10 +750,11 @@ function StatusTab() {
 
 // ── Main AdminDashboard ───────────────────────────────────────────────────────
 const NAV = [
-  { id: 'users',    icon: <TeamOutlined />,      label: 'Người dùng' },
-  { id: 'history',  icon: <HistoryOutlined />,    label: 'Lịch sử dịch' },
-  { id: 'glossary', icon: <BookOutlined />,       label: 'Thuật ngữ hệ thống' },
-  { id: 'status',   icon: <DashboardOutlined />,  label: 'Trạng thái máy chủ' },
+  { id: 'users',         icon: <TeamOutlined />,      label: 'Người dùng' },
+  { id: 'history',       icon: <HistoryOutlined />,    label: 'Lịch sử dịch' },
+  { id: 'glossary',      icon: <BookOutlined />,       label: 'Thuật ngữ hệ thống' },
+  { id: 'contributions', icon: <BulbOutlined />,       label: 'Bản dịch đóng góp' },
+  { id: 'status',        icon: <DashboardOutlined />,  label: 'Trạng thái máy chủ' },
 ];
 
 export default function AdminDashboard() {
@@ -739,10 +858,11 @@ export default function AdminDashboard() {
           </nav>
 
           <main className="admin-content">
-            {activeTab === 'users'    && <UsersTab    uid={session.uid} toast={toast} />}
-            {activeTab === 'history'  && <HistoryTab  uid={session.uid} toast={toast} />}
-            {activeTab === 'glossary' && <GlossaryTab uid={session.uid} toast={toast} />}
-            {activeTab === 'status'   && <StatusTab   toast={toast} />}
+            {activeTab === 'users'         && <UsersTab         uid={session.uid} toast={toast} />}
+            {activeTab === 'history'       && <HistoryTab       uid={session.uid} toast={toast} />}
+            {activeTab === 'glossary'      && <GlossaryTab      uid={session.uid} toast={toast} />}
+            {activeTab === 'contributions' && <ContributionsTab uid={session.uid} toast={toast} />}
+            {activeTab === 'status'        && <StatusTab        toast={toast} />}
           </main>
         </div>
       )}

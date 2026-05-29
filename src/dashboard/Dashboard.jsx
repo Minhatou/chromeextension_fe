@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import './Dashboard.css';
-import { translateText } from '../api/translationClient';
+import {
+  translateText,
+  addSavedTranslation,
+  getSavedTranslations,
+  deleteSavedTranslation,
+  updateSavedTranslationNote,
+  rateTranslation,
+  contributeTranslation,
+  rechargeTokens
+} from '../api/translationClient';
 import { loginWithEmail, registerWithEmail, logout, getSession } from '../api/authClient';
 import { createWorker } from 'tesseract.js';
 import {
@@ -10,7 +19,9 @@ import {
   SwapOutlined, AudioOutlined, FormOutlined, SoundOutlined,
   CopyOutlined, StarOutlined, LinkOutlined, HistoryOutlined,
   BookOutlined, DeleteOutlined, PlusOutlined,
-  QuestionCircleOutlined, CompressOutlined
+  QuestionCircleOutlined, CompressOutlined,
+  LikeOutlined, LikeFilled, DislikeOutlined, DislikeFilled,
+  BulbOutlined, EditOutlined, SaveOutlined
 } from '@ant-design/icons';
 
 export default function Dashboard() {
@@ -67,8 +78,28 @@ export default function Dashboard() {
   });
 
   const [recentTranslations, setRecentTranslations] = useState([]);
+  const [savedTranslations, setSavedTranslations] = useState([]);
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [currentRating, setCurrentRating] = useState(null);
+  const [isSaveTransOpen, setIsSaveTransOpen] = useState(false);
+  const [saveTransNote, setSaveTransNote] = useState('');
+  const [isContributeOpen, setIsContributeOpen] = useState(false);
+  const [suggestedTrans, setSuggestedTrans] = useState('');
+  const [contribSuccessMsg, setContribSuccessMsg] = useState('');
 
+  const [tokensBalance, setTokensBalance] = useState(1000000);
   const [savedVocabulary, setSavedVocabulary] = useState([]);
+
+  // Mock Payment States
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [isRechargeOpen, setIsRechargeOpen] = useState(false);
+  const [selectedPackage, setSelectedPackage] = useState(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('qr');
+  const [creditCardNum, setCreditCardNum] = useState('');
+  const [creditCardExp, setCreditCardExp] = useState('');
+  const [creditCardCvv, setCreditCardCvv] = useState('');
+  const [rechargeSuccess, setRechargeSuccess] = useState(false);
 
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -95,6 +126,12 @@ export default function Dashboard() {
       if (s) setSession(s);
     });
   }, []);
+
+  useEffect(() => {
+    if (session && session.tokens_balance !== undefined) {
+      setTokensBalance(session.tokens_balance);
+    }
+  }, [session]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -151,7 +188,7 @@ export default function Dashboard() {
     setStats(prev => ({ ...prev, activeMode: inferenceMode === 'api' ? 'API Mode' : 'Local Mode' }));
   }, [inferenceMode]);
 
-  // Fetch glossary and history when session changes
+  // Fetch glossary, history, and saved translations when session changes
   useEffect(() => {
     if (session && session.uid) {
       console.log("[Glossary] Fetching from Firestore for user:", session.uid);
@@ -183,6 +220,53 @@ export default function Dashboard() {
           }
         })
         .catch(err => console.error("[History] Fetch error:", err));
+
+      console.log("[Saved Translations] Fetching for user:", session.uid);
+      getSavedTranslations(session.uid)
+        .then(data => {
+          if (data.saved_translations) {
+            setSavedTranslations(data.saved_translations);
+          }
+        })
+        .catch(err => console.error("[Saved Translations] Fetch error:", err));
+    }
+  }, [session]);
+
+  // Listen for right-click Image Translation triggered from background context menu
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      const checkPendingImage = () => {
+        chrome.storage.local.get(['pendingImageTranslation'], (result) => {
+          if (result.pendingImageTranslation) {
+            const { srcUrl, timestamp } = result.pendingImageTranslation;
+            // Only process if it is fresh (within 10 seconds)
+            if (Date.now() - timestamp < 10000) {
+              console.log('[Dashboard] Found pending image translation:', srcUrl);
+              chrome.storage.local.remove(['pendingImageTranslation']);
+              setCurrentMode('image');
+              performOCR(srcUrl);
+            }
+          }
+        });
+      };
+
+      checkPendingImage();
+
+      const handleStorageChange = (changes, area) => {
+        if (area === 'local' && changes.pendingImageTranslation && changes.pendingImageTranslation.newValue) {
+          const { srcUrl, timestamp } = changes.pendingImageTranslation.newValue;
+          if (Date.now() - timestamp < 10000) {
+            console.log('[Dashboard Listener] Found pending image translation:', srcUrl);
+            chrome.storage.local.remove(['pendingImageTranslation']);
+            setCurrentMode('image');
+            performOCR(srcUrl);
+          }
+        }
+      };
+      chrome.storage.onChanged.addListener(handleStorageChange);
+      return () => {
+        chrome.storage.onChanged.removeListener(handleStorageChange);
+      };
     }
   }, [session]);
 
@@ -517,15 +601,22 @@ export default function Dashboard() {
   const handleTranslate = async (text) => {
     console.log('[Dashboard] handleTranslate called with:', text);
     setInputText(text);
+    setIsFromCache(false);
+    setCurrentRating(null);
     if (text.trim() === '') {
       setOutputText('');
+      return;
+    }
+
+    if (!session || !session.uid) {
+      setIsAuthModalOpen(true);
+      setOutputText('Vui lòng đăng nhập để sử dụng tính năng dịch thuật.');
       return;
     }
 
     try {
       setOutputText('Đang dịch...');
 
-      // Convert savedVocabulary array of objects to key-value dict if enabled
       const glossaryDict = {};
       const matchedTerms = [];
       if (glossaryEnabled && Array.isArray(savedVocabulary)) {
@@ -545,35 +636,56 @@ export default function Dashboard() {
       }
       if (matchedTerms.length > 0) {
         console.log(`[Dashboard] 🎯 Khớp từ điển cá nhân cho:`, matchedTerms);
-      } else if (glossaryEnabled) {
-        console.log(`[Dashboard] ℹ️ Không khớp thuật ngữ nào trong từ điển hiện tại.`);
       }
 
-      const result = await translateText(text, '', 'auto', glossaryDict, glossaryMode);
+      const result = await translateText(text, '', 'auto', glossaryDict, glossaryMode, session.uid);
       console.log('[Dashboard] Translation result:', result);
       setOutputText(result.translation || 'Không nhận được bản dịch');
+      if (result.from_cache) {
+        setIsFromCache(true);
+      }
+      if (result.tokens_balance !== undefined) {
+        setTokensBalance(result.tokens_balance);
+      }
     } catch (error) {
       console.error('[Dashboard] Translation error:', error);
-      setOutputText('Lỗi khi dịch: ' + error.message);
+      if (error.message && (error.message.includes('OUT_OF_TOKENS') || error.message.includes('hết token'))) {
+        setOutputText('Lỗi: Bạn đã hết token dịch miễn phí. Vui lòng chọn tab "Nạp Token" phía dưới để tiếp tục!');
+      } else {
+        setOutputText('Lỗi khi dịch: ' + error.message);
+      }
     }
   };
 
   const handleExplain = async (text) => {
     setExplainInput(text);
     if (!text.trim()) { setExplainOutput(''); return; }
+
+    if (!session || !session.uid) {
+      setIsAuthModalOpen(true);
+      setExplainOutput('Vui lòng đăng nhập để sử dụng tính năng giải thích.');
+      return;
+    }
+
     setIsExplaining(true);
     setExplainOutput('Đang giải thích...');
     try {
       const res = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, context: '', target_lang: 'explain', glossary: {}, glossary_mode: 'both' })
+        body: JSON.stringify({ text, context: '', target_lang: 'explain', glossary: {}, glossary_mode: 'both', user_id: session.uid })
       });
-      if (res.ok) {
+      if (res.status === 402) {
+        setExplainOutput('Lỗi: Bạn đã hết token dịch miễn phí. Vui lòng nạp thêm token để tiếp tục!');
+      } else if (res.ok) {
         const data = await res.json();
         setExplainOutput(data.translation || 'Không có kết quả.');
+        if (data.tokens_balance !== undefined) {
+          setTokensBalance(data.tokens_balance);
+        }
       } else {
-        setExplainOutput('Lỗi từ máy chủ.');
+        const data = await res.json().catch(() => ({}));
+        setExplainOutput(data.error || 'Lỗi từ máy chủ.');
       }
     } catch (err) {
       setExplainOutput('Không kết nối được máy chủ.');
@@ -585,24 +697,80 @@ export default function Dashboard() {
   const handleSummarize = async (text) => {
     setSummarizeInput(text);
     if (!text.trim()) { setSummarizeOutput(''); return; }
+
+    if (!session || !session.uid) {
+      setIsAuthModalOpen(true);
+      setSummarizeOutput('Vui lòng đăng nhập để sử dụng tính năng tóm tắt.');
+      return;
+    }
+
     setIsSummarizing(true);
     setSummarizeOutput('Đang tóm tắt...');
     try {
       const res = await fetch('http://127.0.0.1:5000/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, context: '', target_lang: 'summarize', glossary: {}, glossary_mode: 'both' })
+        body: JSON.stringify({ text, context: '', target_lang: 'summarize', glossary: {}, glossary_mode: 'both', user_id: session.uid })
       });
-      if (res.ok) {
+      if (res.status === 402) {
+        setSummarizeOutput('Lỗi: Bạn đã hết token dịch miễn phí. Vui lòng nạp thêm token để tiếp tục!');
+      } else if (res.ok) {
         const data = await res.json();
         setSummarizeOutput(data.translation || 'Không có kết quả.');
+        if (data.tokens_balance !== undefined) {
+          setTokensBalance(data.tokens_balance);
+        }
       } else {
-        setSummarizeOutput('Lỗi từ máy chủ.');
+        const data = await res.json().catch(() => ({}));
+        setSummarizeOutput(data.error || 'Lỗi từ máy chủ.');
       }
     } catch (err) {
       setSummarizeOutput('Không kết nối được máy chủ.');
     } finally {
       setIsSummarizing(false);
+    }
+  };
+
+  const handleOpenRechargeModal = (packageId) => {
+    setSelectedPackage(packageId);
+    setPaymentMethod('qr');
+    setCreditCardNum('');
+    setCreditCardExp('');
+    setCreditCardCvv('');
+    setRechargeSuccess(false);
+    setIsRechargeOpen(true);
+  };
+
+  const handleConfirmRecharge = async () => {
+    if (!session || !session.uid || !selectedPackage) return;
+    
+    if (paymentMethod === 'card' && (!creditCardNum || !creditCardExp || !creditCardCvv)) {
+      alert("Vui lòng điền đầy đủ thông tin thẻ tín dụng!");
+      return;
+    }
+
+    setIsProcessingPayment(true);
+    
+    // Simulate loading/processing payment for 1.8 seconds
+    await new Promise(resolve => setTimeout(resolve, 1800));
+    
+    try {
+      const res = await rechargeTokens(session.uid, selectedPackage);
+      if (res.success) {
+        setTokensBalance(res.tokens_balance);
+        setRechargeSuccess(true);
+        setIsProcessingPayment(false);
+        // Sync with chrome local storage if extension context
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ authSession: { ...session, tokens_balance: res.tokens_balance } });
+        }
+      } else {
+        alert("Lỗi khi nạp: " + (res.error || "Không rõ nguyên nhân"));
+        setIsProcessingPayment(false);
+      }
+    } catch (err) {
+      alert("Lỗi khi kết nối đến máy chủ thanh toán: " + err.message);
+      setIsProcessingPayment(false);
     }
   };
 
@@ -677,6 +845,113 @@ export default function Dashboard() {
     }
   };
 
+  const handleRate = async (rating) => {
+    if (!inputText.trim() || !outputText.trim()) return;
+    if (!session || !session.uid) {
+      alert("Vui lòng đăng nhập để đánh giá bản dịch!");
+      return;
+    }
+    try {
+      setCurrentRating(rating);
+      await rateTranslation(session.uid, inputText, rating);
+      
+      // Update local history rating as well so UI updates instantly
+      setRecentTranslations(prev => 
+        prev.map(item => 
+          (item.source === inputText) ? { ...item, rating } : item
+        )
+      );
+    } catch (err) {
+      console.error("Failed to rate translation", err);
+    }
+  };
+
+  const handleOpenSaveTrans = () => {
+    if (!inputText.trim() || !outputText.trim() || outputText === 'Đang dịch...' || outputText.startsWith('Lỗi khi dịch')) {
+      alert("Chưa có bản dịch hợp lệ để lưu!");
+      return;
+    }
+    if (!session || !session.uid) {
+      alert("Vui lòng đăng nhập để lưu bản dịch!");
+      return;
+    }
+    setSaveTransNote('');
+    setIsSaveTransOpen(true);
+  };
+
+  const handleSaveTranslationSubmit = async () => {
+    if (!session || !session.uid) return;
+    try {
+      const res = await addSavedTranslation(session.uid, inputText, outputText, saveTransNote);
+      if (res.success) {
+        setSavedTranslations(prev => [res.entry, ...prev]);
+        setIsSaveTransOpen(false);
+        alert("Đã lưu bản dịch thành công!");
+      }
+    } catch (err) {
+      console.error("Failed to save translation", err);
+      alert("Không thể lưu bản dịch: " + err.message);
+    }
+  };
+
+  const handleDeleteSavedTrans = async (id) => {
+    if (!session || !session.uid) return;
+    if (!window.confirm("Bạn muốn xóa bản dịch đã lưu này?")) return;
+    try {
+      const res = await deleteSavedTranslation(session.uid, id);
+      if (res.success) {
+        setSavedTranslations(prev => prev.filter(item => item.id !== id));
+      }
+    } catch (err) {
+      console.error("Failed to delete saved translation", err);
+    }
+  };
+
+  const handleUpdateSavedTransNote = async (id, currentNote) => {
+    const newNote = window.prompt("Cập nhật ghi chú cho bản dịch này:", currentNote);
+    if (newNote === null) return; // Cancelled
+    if (!session || !session.uid) return;
+    try {
+      const res = await updateSavedTranslationNote(session.uid, id, newNote);
+      if (res.success) {
+        setSavedTranslations(prev => prev.map(item => item.id === id ? { ...item, note: newNote } : item));
+      }
+    } catch (err) {
+      console.error("Failed to update note", err);
+    }
+  };
+
+  const handleOpenContribute = () => {
+    if (!inputText.trim() || !outputText.trim() || outputText === 'Đang dịch...') {
+      alert("Chưa có bản dịch hợp lệ để đóng góp!");
+      return;
+    }
+    setSuggestedTrans(outputText);
+    setContribSuccessMsg('');
+    setIsContributeOpen(true);
+  };
+
+  const handleContributeSubmit = async () => {
+    if (!suggestedTrans.trim()) {
+      alert("Vui lòng nhập bản dịch đóng góp!");
+      return;
+    }
+    try {
+      const uid = session?.uid || 'anonymous';
+      const email = session?.email || 'anonymous';
+      const res = await contributeTranslation(uid, email, inputText, outputText, suggestedTrans);
+      if (res.success) {
+        setContribSuccessMsg("Cảm ơn bạn đã đóng góp! Bản dịch đã được gửi lên hệ thống để xem xét.");
+        setTimeout(() => {
+          setIsContributeOpen(false);
+        }, 2000);
+      }
+    } catch (err) {
+      console.error("Failed to contribute translation", err);
+      alert("Không thể gửi đóng góp: " + err.message);
+    }
+  };
+
   const handleSwapLanguages = () => {
     setSourceLang(prev => prev === 'Anh' ? 'Việt' : 'Anh');
     setTargetLang(prev => prev === 'Việt' ? 'Anh' : 'Việt');
@@ -690,14 +965,7 @@ export default function Dashboard() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  const handleImageUpload = async (e) => {
-    console.log('[OCR] Starting image upload...');
-    const file = e.target.files[0];
-    if (!file) {
-      console.log('[OCR] No file selected.');
-      return;
-    }
-
+  const performOCR = async (fileOrUrl) => {
     setIsProcessingOCR(true);
     setInputText('Đang trích xuất chữ từ ảnh...');
 
@@ -717,7 +985,7 @@ export default function Dashboard() {
       });
 
       console.log('[OCR] Worker created. Recognizing text...');
-      const { data: { text } } = await worker.recognize(file);
+      const { data: { text } } = await worker.recognize(fileOrUrl);
 
       console.log('[OCR] Recognition complete. Terminating worker...');
       await worker.terminate();
@@ -731,6 +999,16 @@ export default function Dashboard() {
     } finally {
       setIsProcessingOCR(false);
     }
+  };
+
+  const handleImageUpload = async (e) => {
+    console.log('[OCR] Starting image upload...');
+    const file = e.target.files[0];
+    if (!file) {
+      console.log('[OCR] No file selected.');
+      return;
+    }
+    await performOCR(file);
   };
 
   const handleDocUpload = async (e) => {
@@ -805,7 +1083,7 @@ export default function Dashboard() {
           </button>
           <button className="gt-icon-btn" title="Cài đặt" onClick={() => setIsSettingsOpen(true)}><SettingOutlined /></button>
           <button className="gt-icon-btn" title="Ứng dụng"><AppstoreOutlined /></button>
-
+ 
           {session?.role === 'admin' && (
             <button
               title="Trang quản trị"
@@ -825,10 +1103,101 @@ export default function Dashboard() {
               ⚙ Admin
             </button>
           )}
-
+ 
           {session ? (
-            <div className="gt-avatar" title={`Tài khoản: ${session.email}\nVai trò: ${session.role}`} onClick={handleLogout} style={{ cursor: 'pointer' }}>
-              {session.email.substring(0, 2).toUpperCase()}
+            <div style={{ position: 'relative' }}>
+              <div 
+                className="gt-avatar" 
+                title={`Tài khoản: ${session.email}\nVai trò: ${session.role}`} 
+                onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)} 
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+              >
+                {session.email.substring(0, 2).toUpperCase()}
+              </div>
+
+              {isUserDropdownOpen && (
+                <>
+                  <div 
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} 
+                    onClick={() => setIsUserDropdownOpen(false)} 
+                  />
+                  <div style={{
+                    position: 'absolute', top: '46px', right: '0', background: '#18181b',
+                    border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '16px',
+                    width: '260px', zIndex: 999, boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+                    display: 'flex', flexDirection: 'column', gap: '12px',
+                    animation: 'it-fade-in 0.15s ease-out', fontFamily: "'Inter', sans-serif"
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '10px' }}>
+                      <span style={{ fontSize: '11px', color: '#888', fontWeight: 500 }}>Tài khoản</span>
+                      <strong style={{ fontSize: '13px', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+                        {session.email}
+                      </strong>
+                    </div>
+
+                    {/* Moved Token Limit Progress Bar */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#aaa', fontWeight: 500 }}>
+                        <span>Hạn mức Token</span>
+                        <strong style={{ color: '#fff' }}>
+                          {tokensBalance === -1 ? 'Vô hạn' : `${tokensBalance.toLocaleString()} / 1M`}
+                        </strong>
+                      </div>
+                      {tokensBalance !== -1 && (
+                        <div style={{
+                          width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px',
+                          overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)'
+                        }}>
+                          <div style={{
+                            width: `${Math.min(100, (tokensBalance / 1000000) * 100)}%`,
+                            height: '100%',
+                            background: tokensBalance > 200000 ? 'linear-gradient(90deg, #ffffff, #aaaaaa)' : 'linear-gradient(90deg, #ef4444, #f87171)',
+                            transition: 'width 0.3s ease'
+                          }}></div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Moved Nạp Token button */}
+                    {tokensBalance !== -1 && (
+                      <button
+                        onClick={() => {
+                          setActiveFooterTab('recharge');
+                          setIsUserDropdownOpen(false);
+                          // Smooth scroll down to panel
+                          setTimeout(() => {
+                            const panelEl = document.querySelector('.gt-panel');
+                            if (panelEl) panelEl.scrollIntoView({ behavior: 'smooth' });
+                          }, 100);
+                        }}
+                        style={{
+                          width: '100%', padding: '10px', background: '#ffffff', color: '#000000',
+                          border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+                          cursor: 'pointer', transition: 'all 0.2s ease', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', gap: '6px'
+                        }}
+                        className="dropdown-recharge-btn"
+                      >
+                        💎 Nạp thêm Token
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setIsUserDropdownOpen(false);
+                        handleLogout();
+                      }}
+                      style={{
+                        width: '100%', padding: '8px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', fontSize: '12px',
+                        fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s ease'
+                      }}
+                    >
+                      🚪 Đăng xuất
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <button
@@ -1042,17 +1411,53 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="gt-output-box">
+              <div className="gt-output-box" style={{ position: 'relative' }}>
+                {isFromCache && (
+                  <span style={{
+                    position: 'absolute', top: '8px', right: '12px',
+                    fontSize: '11px', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)',
+                    padding: '2px 8px', borderRadius: '12px', fontWeight: 600,
+                    zIndex: 10
+                  }}>
+                    ⚡ Lấy từ lịch sử dịch
+                  </span>
+                )}
                 <div className={`gt-output-text ${outputText ? 'has-content' : ''}`}>
                   {outputText || 'Bản dịch'}
                 </div>
                 <div className="gt-box-footer">
-                  <div className="footer-left">
+                  <div className="footer-left" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                     <button className="gt-icon-btn" title="Nghe bản dịch" onClick={handleSpeak}><SoundOutlined /></button>
+                    {outputText && outputText !== 'Đang dịch...' && !outputText.startsWith('Lỗi khi dịch') && session && (
+                      <>
+                        <button
+                          className="gt-icon-btn"
+                          title="Hài lòng"
+                          onClick={() => handleRate('like')}
+                          style={{ color: currentRating === 'like' ? '#10b981' : 'inherit' }}
+                        >
+                          {currentRating === 'like' ? <LikeFilled /> : <LikeOutlined />}
+                        </button>
+                        <button
+                          className="gt-icon-btn"
+                          title="Không hài lòng (Lần sau dịch lại)"
+                          onClick={() => handleRate('dislike')}
+                          style={{ color: currentRating === 'dislike' ? '#ef4444' : 'inherit' }}
+                        >
+                          {currentRating === 'dislike' ? <DislikeFilled /> : <DislikeOutlined />}
+                        </button>
+                      </>
+                    )}
                   </div>
-                  <div className="footer-right">
-                    <button className="gt-icon-btn" title="Sao chép"><CopyOutlined /></button>
-                    <button className="gt-icon-btn" title="Lưu vào sổ tay" onClick={handleSaveToGlossary}><StarOutlined /></button>
+                  <div className="footer-right" style={{ display: 'flex', gap: '4px' }}>
+                    <button className="gt-icon-btn" title="Sao chép" onClick={() => outputText && navigator.clipboard.writeText(outputText)}><CopyOutlined /></button>
+                    <button className="gt-icon-btn" title="Lưu sổ tay thuật ngữ" onClick={handleSaveToGlossary}><StarOutlined /></button>
+                    {outputText && outputText !== 'Đang dịch...' && !outputText.startsWith('Lỗi khi dịch') && session && (
+                      <>
+                        <button className="gt-icon-btn" title="Lưu Sổ tay bản dịch/ghi chú" onClick={handleOpenSaveTrans}><SaveOutlined /></button>
+                        <button className="gt-icon-btn" title="Đóng góp cải thiện bản dịch" onClick={handleOpenContribute}><BulbOutlined /></button>
+                      </>
+                    )}
                     <button className="gt-icon-btn" title="Chia sẻ"><LinkOutlined /></button>
                   </div>
                 </div>
@@ -1073,7 +1478,13 @@ export default function Dashboard() {
             className={`gt-footer-btn ${activeFooterTab === 'saved' ? 'active' : ''}`}
             onClick={() => setActiveFooterTab(activeFooterTab === 'saved' ? null : 'saved')}
           >
-            <span className="icon"><StarOutlined /></span> Đã lưu
+            <span className="icon"><StarOutlined /></span> Sổ tay thuật ngữ
+          </button>
+          <button
+            className={`gt-footer-btn ${activeFooterTab === 'saved_translations' ? 'active' : ''}`}
+            onClick={() => setActiveFooterTab(activeFooterTab === 'saved_translations' ? null : 'saved_translations')}
+          >
+            <span className="icon"><SaveOutlined /></span> Bản dịch đã lưu
           </button>
         </div>
 
@@ -1119,6 +1530,143 @@ export default function Dashboard() {
                   <button className="delete-btn" onClick={() => deleteTerm(item.id)}><DeleteOutlined /></button>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {activeFooterTab === 'saved_translations' && (
+          <div className="gt-panel glass">
+            <div className="panel-header">
+              <h3>Sổ tay bản dịch & Ghi chú</h3>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Tổng số: {savedTranslations.length}</span>
+            </div>
+            <div className="translation-list">
+              {savedTranslations.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>Chưa có bản dịch nào được lưu.</div>
+              ) : (
+                savedTranslations.map(item => (
+                  <div key={item.id} className="translation-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+                    <div className="text-pair">
+                      <p className="source-text" style={{ fontWeight: 600 }}>{item.source_text}</p>
+                      <p className="target-text" style={{ color: 'var(--accent-primary)', marginTop: '4px' }}>{item.translated_text}</p>
+                    </div>
+                    {item.note && (
+                      <div className="vocab-context" style={{ margin: '4px 0', padding: '6px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontSize: '12px', fontStyle: 'italic' }}>
+                        <strong>Ghi chú:</strong> {item.note}
+                      </div>
+                    )}
+                    <div className="item-meta" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px' }}>
+                      <span className="time" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        {item.timestamp ? new Date(item.timestamp).toLocaleString('vi-VN') : 'Vừa xong'}
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button className="btn-icon" title="Sửa ghi chú" onClick={() => handleUpdateSavedTransNote(item.id, item.note)}><EditOutlined /></button>
+                        <button className="btn-icon" title="Xóa bản dịch" style={{ color: '#ef4444' }} onClick={() => handleDeleteSavedTrans(item.id)}><DeleteOutlined /></button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeFooterTab === 'recharge' && (
+          <div className="gt-panel glass">
+            <div className="panel-header">
+              <h3>💎 Nạp thêm Token & Gói dịch vụ</h3>
+              <span style={{ fontSize: '13px', color: '#60a5fa', fontWeight: 600 }}>
+                Số dư hiện tại: {tokensBalance.toLocaleString()} tokens
+              </span>
+            </div>
+            
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '20px', padding: '10px 0 20px 0'
+            }}>
+              {/* Basic Package */}
+              <div style={{
+                background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
+                justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
+                boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+              }} className="pricing-card" onClick={() => handleOpenRechargeModal('basic')}>
+                <div>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#94a3b8' }}>Gói Cơ Bản</h4>
+                  <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
+                    100.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>tokens</span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                    Phù hợp cho lập trình viên dịch tài liệu nhỏ hoặc kiểm thử API.
+                  </p>
+                </div>
+                <div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>50.000 VNĐ</div>
+                  <button style={{
+                    width: '100%', padding: '10px', background: '#3b82f6', color: '#fff',
+                    border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}>Mua ngay</button>
+                </div>
+              </div>
+
+              {/* Standard Package */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(59, 130, 246, 0.15))',
+                border: '2px solid #3b82f6',
+                borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
+                justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
+                position: 'relative', boxShadow: '0 8px 25px rgba(59, 130, 246, 0.2)'
+              }} className="pricing-card" onClick={() => handleOpenRechargeModal('standard')}>
+                <span style={{
+                  position: 'absolute', top: '-10px', right: '15px', background: '#3b82f6',
+                  color: '#fff', fontSize: '10px', fontWeight: 700, padding: '2px 8px',
+                  borderRadius: '10px', textTransform: 'uppercase'
+                }}>Bán chạy nhất</span>
+                <div>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#38bdf8' }}>Gói Tiêu Chuẩn</h4>
+                  <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
+                    500.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>tokens</span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                    Gói tối ưu nhất cho công việc dịch thuật hàng ngày, giải thích code và tài liệu IT lớn.
+                  </p>
+                </div>
+                <div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>200.000 VNĐ</div>
+                  <button style={{
+                    width: '100%', padding: '10px', background: '#3b82f6', color: '#fff',
+                    border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
+                    transition: 'all 0.2s ease', boxShadow: '0 4px 12px rgba(59,130,246,0.3)'
+                  }}>Mua ngay</button>
+                </div>
+              </div>
+
+              {/* Premium Package */}
+              <div style={{
+                background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
+                justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
+                boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+              }} className="pricing-card" onClick={() => handleOpenRechargeModal('premium')}>
+                <div>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#a78bfa' }}>Gói Cao Cấp</h4>
+                  <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
+                    2.000.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>tokens</span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                    Dành cho doanh nghiệp hoặc lập trình viên chuyên nghiệp dịch khối lượng văn bản khổng lồ.
+                  </p>
+                </div>
+                <div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>500.000 VNĐ</div>
+                  <button style={{
+                    width: '100%', padding: '10px', background: '#a78bfa', color: '#1e1b4b',
+                    border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}>Mua ngay</button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1318,6 +1866,257 @@ export default function Dashboard() {
                   </span>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Translation Modal */}
+      {isSaveTransOpen && (
+        <div className="gt-modal-overlay" onClick={() => setIsSaveTransOpen(false)}>
+          <div className="gt-modal-content glass animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <div className="gt-modal-header">
+              <h2>💾 Lưu bản dịch vào Sổ tay</h2>
+              <button className="gt-modal-close" onClick={() => setIsSaveTransOpen(false)}>×</button>
+            </div>
+
+            <div className="gt-modal-body">
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label">Văn bản gốc</label>
+                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{inputText}</div>
+              </div>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label">Bản dịch</label>
+                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontSize: '13px', color: 'var(--accent-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{outputText}</div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Ghi chú (Tùy chọn)</label>
+                <textarea
+                  className="gt-input"
+                  style={{ width: '100%', minHeight: '80px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}
+                  placeholder="Ví dụ: Cụm từ hay dùng khi viết email, thuật ngữ dự án..."
+                  value={saveTransNote}
+                  onChange={(e) => setSaveTransNote(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="gt-modal-footer">
+              <button className="gt-btn-outline" style={{ marginRight: '10px' }} onClick={() => setIsSaveTransOpen(false)}>Hủy</button>
+              <button className="gt-btn-primary" onClick={handleSaveTranslationSubmit}>Lưu lại</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contribute Translation Modal */}
+      {isContributeOpen && (
+        <div className="gt-modal-overlay" onClick={() => setIsContributeOpen(false)}>
+          <div className="gt-modal-content glass animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <div className="gt-modal-header">
+              <h2>💡 Đóng góp bản dịch tốt hơn</h2>
+              <button className="gt-modal-close" onClick={() => setIsContributeOpen(false)}>×</button>
+            </div>
+
+            <div className="gt-modal-body">
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label">Văn bản gốc</label>
+                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{inputText}</div>
+              </div>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label className="form-label">Bản dịch hiện tại của AI</label>
+                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontSize: '13px', textDecoration: 'line-through', opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis' }}>{outputText}</div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Bản dịch đề xuất của bạn</label>
+                <textarea
+                  className="gt-input"
+                  style={{ width: '100%', minHeight: '80px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}
+                  placeholder="Nhập bản dịch chuẩn xác hơn tại đây..."
+                  value={suggestedTrans}
+                  onChange={(e) => setSuggestedTrans(e.target.value)}
+                />
+              </div>
+              {contribSuccessMsg && (
+                <div style={{ marginTop: '12px', color: '#10b981', fontSize: '13px', fontWeight: 600 }}>{contribSuccessMsg}</div>
+              )}
+            </div>
+
+            <div className="gt-modal-footer">
+              <button className="gt-btn-outline" style={{ marginRight: '10px' }} onClick={() => setIsContributeOpen(false)}>Hủy</button>
+              <button className="gt-btn-primary" onClick={handleContributeSubmit}>Gửi đóng góp</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mock Payment / Recharge Modal */}
+      {isRechargeOpen && (
+        <div className="gt-modal-overlay" onClick={() => !isProcessingPayment && setIsRechargeOpen(false)}>
+          <div className="gt-modal-content glass animate-slide-up" style={{ maxWidth: '420px', background: 'rgba(15, 15, 15, 0.98)', border: '1px solid rgba(255, 255, 255, 0.25)', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="gt-modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>💎 Thanh toán & Nạp Token</h2>
+              <button className="gt-modal-close" disabled={isProcessingPayment} onClick={() => setIsRechargeOpen(false)} style={{ color: '#aaa' }}>×</button>
+            </div>
+
+            <div className="gt-modal-body" style={{ color: '#fff' }}>
+              {rechargeSuccess ? (
+                <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                  <div style={{ fontSize: '64px', marginBottom: '16px' }}>🏴</div>
+                  <h3 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 12px 0' }}>Nạp Token thành công!</h3>
+                  <p style={{ fontSize: '13px', color: '#888888', lineHeight: 1.6, margin: '0 0 24px 0' }}>
+                    Yêu cầu đã được xác thực thành công. Tài khoản của bạn được cộng thêm <strong>{selectedPackage === 'basic' ? '100.000' : selectedPackage === 'standard' ? '500.000' : '2.000.000'}</strong> tokens.
+                  </p>
+                  <button className="gt-btn-primary" style={{ width: '100%', background: '#ffffff', color: '#000000', border: 'none', fontWeight: 700 }} onClick={() => setIsRechargeOpen(false)}>Quay lại dịch thuật</button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ background: '#111111', padding: '14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '20px' }}>
+                    <div style={{ fontSize: '11px', color: '#666666', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gói dịch vụ chọn mua:</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>
+                        {selectedPackage === 'basic' ? 'Gói Cơ bản (100k tokens)' : selectedPackage === 'standard' ? 'Gói Tiêu chuẩn (500k tokens)' : 'Gói Cao cấp (2M tokens)'}
+                      </span>
+                      <strong style={{ color: '#ffffff', fontSize: '17px' }}>
+                        {selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Payment Method Tabs (B&W Minimalist) */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                    <button
+                      style={{
+                        flex: 1, padding: '10px', borderRadius: '8px', border: paymentMethod === 'qr' ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
+                        background: paymentMethod === 'qr' ? '#ffffff' : 'transparent', color: paymentMethod === 'qr' ? '#000000' : '#ffffff', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
+                      }}
+                      onClick={() => setPaymentMethod('qr')}
+                    >
+                      📲 Quét mã QR
+                    </button>
+                    <button
+                      style={{
+                        flex: 1, padding: '10px', borderRadius: '8px', border: paymentMethod === 'card' ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.15)',
+                        background: paymentMethod === 'card' ? '#ffffff' : 'transparent', color: paymentMethod === 'card' ? '#000000' : '#ffffff', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
+                      }}
+                      onClick={() => setPaymentMethod('card')}
+                    >
+                      💳 Thẻ tín dụng
+                    </button>
+                  </div>
+
+                  {paymentMethod === 'qr' ? (
+                    <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                      <div style={{
+                        background: '#ffffff', padding: '14px', borderRadius: '8px', display: 'inline-block',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.5)', marginBottom: '16px'
+                      }}>
+                        {/* Stark Black & White VietQR mockup */}
+                        <div style={{
+                          width: '180px', height: '180px', background: '#ffffff', borderRadius: '4px',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                          border: '3px solid #000000', position: 'relative'
+                        }}>
+                          <div style={{ fontWeight: 900, color: '#000000', fontSize: '18px', marginBottom: '4px', letterSpacing: '1px' }}>VIETQR</div>
+                          <div style={{
+                            width: '110px', height: '110px', background: 'repeating-conic-gradient(#000 0% 25%, #fff 0% 50%) 50% / 10px 10px',
+                            border: '2px solid #000000'
+                          }}></div>
+                          <div style={{ fontSize: '8px', fontWeight: 800, color: '#000000', marginTop: '8px', letterSpacing: '0.5px' }}>MINIMALIST PAYMENT</div>
+                        </div>
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#666666', lineHeight: 1.5, margin: '0 0 10px 0' }}>
+                        Quét mã QR bằng ứng dụng ngân hàng của bạn để thanh toán ngay lập tức. Số dư token sẽ đồng bộ tự động.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {/* Monochromatic Premium Credit Card */}
+                      <div style={{
+                        background: 'linear-gradient(135deg, #000000, #222222)', borderRadius: '8px',
+                        padding: '18px', color: '#ffffff', minHeight: '130px', display: 'flex', flexDirection: 'column',
+                        justifyContent: 'space-between', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 4px 20px rgba(0,0,0,0.6)'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '1.5px' }}>VISA</span>
+                          <span style={{ fontSize: '8px', opacity: 0.5, letterSpacing: '1px' }}>PREMIUM BLACK</span>
+                        </div>
+                        <div style={{ fontSize: '17px', letterSpacing: '2px', fontFamily: 'monospace', margin: '14px 0', color: '#fff' }}>
+                          {creditCardNum || '•••• •••• •••• ••••'}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                          <div>
+                            <span style={{ opacity: 0.4, display: 'block', fontSize: '7px', marginBottom: '2px' }}>CHỦ THẺ</span>
+                            <strong style={{ letterSpacing: '0.5px' }}>MEMBER USER</strong>
+                          </div>
+                          <div>
+                            <span style={{ opacity: 0.4, display: 'block', fontSize: '7px', marginBottom: '2px' }}>HẠN DÙNG</span>
+                            <strong style={{ letterSpacing: '0.5px' }}>{creditCardExp || 'MM/YY'}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: '10px' }}>
+                        <label style={{ fontSize: '11px', color: '#666666', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Số thẻ</label>
+                        <input
+                          type="text"
+                          className="gt-input"
+                          maxLength="19"
+                          placeholder="4000 1234 5678 9010"
+                          value={creditCardNum}
+                          onChange={(e) => setCreditCardNum(e.target.value.replace(/[^\d\s]/g, ''))}
+                          style={{ width: '100%', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: '11px', color: '#666666', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Hạn dùng</label>
+                          <input
+                            type="text"
+                            className="gt-input"
+                            maxLength="5"
+                            placeholder="MM/YY"
+                            value={creditCardExp}
+                            onChange={(e) => setCreditCardExp(e.target.value)}
+                            style={{ width: '100%', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
+                          />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: '11px', color: '#666666', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>CVV</label>
+                          <input
+                            type="password"
+                            className="gt-input"
+                            maxLength="3"
+                            placeholder="***"
+                            value={creditCardCvv}
+                            onChange={(e) => setCreditCardCvv(e.target.value.replace(/\D/g, ''))}
+                            style={{ width: '100%', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: '28px', display: 'flex', gap: '10px' }}>
+                    <button
+                      className="gt-btn-outline"
+                      style={{ flex: 1, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent', color: '#888888', borderRadius: '6px', fontWeight: 600 }}
+                      disabled={isProcessingPayment}
+                      onClick={() => setIsRechargeOpen(false)}
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      className="gt-btn-primary"
+                      style={{ flex: 2, background: '#ffffff', border: 'none', color: '#000000', borderRadius: '6px', fontWeight: 750 }}
+                      disabled={isProcessingPayment}
+                      onClick={handleConfirmRecharge}
+                    >
+                      {isProcessingPayment ? '⌛ Đang xác thực...' : '✓ Xác nhận Thanh toán'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

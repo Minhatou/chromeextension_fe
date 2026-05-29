@@ -14,6 +14,21 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Explain with IT Translator',
     contexts: ['selection'],
   });
+  chrome.contextMenus.create({
+    id: 'it-image-translator',
+    title: 'Dịch hình ảnh với IT Translator',
+    contexts: ['image'],
+  });
+  chrome.contextMenus.create({
+    id: 'it-open-dashboard',
+    title: 'Mở Dashboard IT Translator',
+    contexts: ['all'],
+  });
+  chrome.contextMenus.create({
+    id: 'it-translate-page',
+    title: 'Dịch toàn bộ trang web',
+    contexts: ['all'],
+  });
 })
 
 // Handle messages from Side Panel or Content Script
@@ -51,7 +66,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Helper function for direct translation in API mode
 async function translateDirectly(text, context, tabId) {
   try {
-    chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode'], async (storageData) => {
+    chrome.storage.local.get(['glossary', 'glossaryEnabled', 'glossaryMode', 'authSession'], async (storageData) => {
       const enabled = storageData.glossaryEnabled !== false;
       const glossaryMode = storageData.glossaryMode || 'both';
       const glossary = enabled ? (storageData.glossary || []) : [];
@@ -66,7 +81,10 @@ async function translateDirectly(text, context, tabId) {
         }
       });
 
-      console.log(`[Background] Translating selection. Glossary: Enabled=${enabled}, Mode=${glossaryMode}`);
+      const session = storageData.authSession;
+      const userId = (session && session.uid) ? session.uid : 'anonymous';
+
+      console.log(`[Background] Translating selection. Glossary: Enabled=${enabled}, Mode=${glossaryMode}, User=${userId}`);
       if (enabled) {
         console.log(`[Background] 📚 Từ điển hiện tại đang sử dụng:`, glossaryDict);
       }
@@ -84,7 +102,8 @@ async function translateDirectly(text, context, tabId) {
           context, 
           target_lang: 'auto',
           glossary: glossaryDict,
-          glossary_mode: glossaryMode
+          glossary_mode: glossaryMode,
+          user_id: userId
         }),
       });
       
@@ -111,6 +130,34 @@ async function translateDirectly(text, context, tabId) {
 
 // Handle context menu click
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'it-image-translator') {
+    console.log('[Background] Context menu click: it-image-translator for image URL:', info.srcUrl);
+    chrome.storage.local.set({ 
+      pendingImageTranslation: { 
+        srcUrl: info.srcUrl, 
+        timestamp: Date.now() 
+      } 
+    }, () => {
+      const url = chrome.runtime.getURL('src/dashboard/index.html');
+      chrome.tabs.create({ url });
+    });
+  }
+
+  if (info.menuItemId === 'it-open-dashboard') {
+    console.log('[Background] Context menu click: it-open-dashboard');
+    const url = chrome.runtime.getURL('src/dashboard/index.html');
+    chrome.tabs.create({ url });
+    return;
+  }
+
+  if (info.menuItemId === 'it-translate-page') {
+    console.log('[Background] Context menu click: it-translate-page');
+    if (tab && tab.id) {
+      chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE_CMD' });
+    }
+    return;
+  }
+
   if (!info.selectionText) return;
 
   if (info.menuItemId === 'it-translator') {
@@ -171,7 +218,7 @@ chrome.commands.onCommand.addListener((command) => {
             const container = range.commonAncestorContainer;
             const parentEl = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
             const contextEl = parentEl.closest('p, section, article, li') || parentEl;
-            const context = contextEl?.innerText?.slice(0, 600) || '';
+            const context = contextEl?.innerText?.slice(0, 2000) || '';
             
             return { text, context };
           }
