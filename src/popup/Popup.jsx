@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { checkStatus } from '../api/translationClient'
-import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle } from '../api/authClient'
+import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle, resetPassword } from '../api/authClient'
 
 export default function Popup() {
   const [status, setStatus] = useState(null)
@@ -14,6 +14,7 @@ export default function Popup() {
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [resetMsg, setResetMsg] = useState('')
 
   // Inference Mode (API vs Local)
   const [inferenceMode, setInferenceMode] = useState('api')
@@ -96,6 +97,25 @@ export default function Popup() {
     try {
       const s = await loginWithGoogle()
       setSession(s)
+    } catch (err) {
+      setAuthError(err.message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleForgotPassword() {
+    const target = email.trim()
+    if (!target) {
+      setAuthError('Vui lòng nhập email để đặt lại mật khẩu.')
+      return
+    }
+    setAuthError('')
+    setResetMsg('')
+    setIsSubmitting(true)
+    try {
+      await resetPassword(target)
+      setResetMsg('Email đặt lại mật khẩu đã được gửi. Vui lòng kiểm tra hộp thư.')
     } catch (err) {
       setAuthError(err.message)
     } finally {
@@ -248,8 +268,21 @@ export default function Popup() {
                   outline: 'none', background: '#fafafa'
                 }}
               />
+              {!isRegistering && (
+                <div style={{ textAlign: 'right', marginTop: '-4px' }}>
+                  <span
+                    onClick={handleForgotPassword}
+                    style={{ color: '#6b7280', cursor: 'pointer', fontSize: '11px' }}
+                  >
+                    Quên mật khẩu?
+                  </span>
+                </div>
+              )}
               {authError && (
                 <div style={{ fontSize: '11px', color: '#dc2626' }}>{authError}</div>
+              )}
+              {resetMsg && (
+                <div style={{ fontSize: '11px', color: '#16a34a' }}>{resetMsg}</div>
               )}
               <button type="submit" disabled={isSubmitting} style={{
                 background: '#18181b', color: '#fff',

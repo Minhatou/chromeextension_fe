@@ -10,12 +10,12 @@ import {
   contributeTranslation,
   rechargeTokens
 } from '../api/translationClient';
-import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle } from '../api/authClient';
+import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle, resetPassword } from '../api/authClient';
 import { createWorker } from 'tesseract.js';
 import {
   SunOutlined, MoonOutlined,
   MenuOutlined, ThunderboltFilled, SettingOutlined, AppstoreOutlined,
-  FileTextOutlined, PictureOutlined, FileOutlined, GlobalOutlined,
+  FileTextOutlined, PictureOutlined, FileOutlined,
   SwapOutlined, AudioOutlined, FormOutlined, SoundOutlined,
   CopyOutlined, StarOutlined, LinkOutlined, HistoryOutlined,
   BookOutlined, DeleteOutlined, PlusOutlined,
@@ -29,10 +29,10 @@ export default function Dashboard() {
   const [outputText, setOutputText] = useState('');
   const [sourceLang, setSourceLang] = useState('Anh');
   const [targetLang, setTargetLang] = useState('Việt');
-  const [currentMode, setCurrentMode] = useState('text'); // 'text' | 'image' | 'doc' | 'web' | 'explain' | 'summarize'
-  const [webUrl, setWebUrl] = useState('');
+  const [currentMode, setCurrentMode] = useState('text'); // 'text' | 'image' | 'doc' | 'explain' | 'summarize'
   const [activeFooterTab, setActiveFooterTab] = useState(null); // null | 'history' | 'saved'
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
+  const [isProcessingDoc, setIsProcessingDoc] = useState(false);
 
   // Explain & Summarize States
   const [explainInput, setExplainInput] = useState('');
@@ -50,6 +50,7 @@ export default function Dashboard() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
 
   // Settings States
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -247,6 +248,24 @@ export default function Dashboard() {
       setIsAuthModalOpen(false);
       setAuthEmail('');
       setAuthPassword('');
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!authEmail.trim()) {
+      setAuthError('Vui lòng nhập email để đặt lại mật khẩu.');
+      return;
+    }
+    setAuthError('');
+    setResetMsg('');
+    setIsSubmittingAuth(true);
+    try {
+      await resetPassword(authEmail.trim());
+      setResetMsg('Email đặt lại mật khẩu đã được gửi. Vui lòng kiểm tra hộp thư.');
     } catch (err) {
       setAuthError(err.message);
     } finally {
@@ -634,6 +653,34 @@ export default function Dashboard() {
     }
   };
 
+  const deleteHistoryItem = (id) => {
+    setRecentTranslations(prev => {
+      const updated = prev.filter(h => h.id !== id);
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ translationHistory: updated });
+      } else {
+        localStorage.setItem('translationHistory', JSON.stringify(updated));
+      }
+      return updated;
+    });
+  };
+
+  const handleSaveFromHistory = async (item) => {
+    if (!session || !session.uid) {
+      alert("Vui lòng đăng nhập để lưu bản dịch!");
+      return;
+    }
+    try {
+      const res = await addSavedTranslation(session.uid, item.source, item.target, '');
+      if (res.success) {
+        setSavedTranslations(prev => [res.entry, ...prev]);
+        alert("Đã lưu vào Sổ tay bản dịch!");
+      }
+    } catch (err) {
+      alert("Không thể lưu bản dịch: " + err.message);
+    }
+  };
+
   const clearHistory = async () => {
     if (session && session.uid) {
       try {
@@ -986,6 +1033,13 @@ export default function Dashboard() {
           (item.source === inputText) ? { ...item, rating } : item
         )
       );
+
+      // If disliked, immediately re-translate to get a fresh translation bypassing the cache
+      if (rating === 'dislike') {
+        console.log('[Dashboard] Disliked translation. Re-translating immediately...');
+        setCurrentRating(null);
+        handleTranslate(inputText);
+      }
     } catch (err) {
       console.error("Failed to rate translation", err);
     }
@@ -1090,37 +1144,48 @@ export default function Dashboard() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   const performOCR = async (fileOrUrl) => {
     setIsProcessingOCR(true);
     setInputText('Đang trích xuất chữ từ ảnh...');
 
     try {
-      console.log('[OCR] Creating worker with langs: [\'eng\', \'vie\']');
-      const worker = await createWorker(['eng', 'vie'], 1, {
-        workerPath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
-          ? chrome.runtime.getURL('worker.min.js')
-          : '/worker.min.js',
-        langPath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
-          ? chrome.runtime.getURL('lang-data/')
-          : '/lang-data/',
-        corePath: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL
-          ? chrome.runtime.getURL('tesseract-core.wasm.js')
-          : '/tesseract-core.wasm.js',
-        logger: m => console.log('[OCR Worker]', m)
+      let base64Image = '';
+      if (fileOrUrl instanceof File || fileOrUrl instanceof Blob) {
+        base64Image = await fileToBase64(fileOrUrl);
+      } else {
+        base64Image = fileOrUrl;
+      }
+
+      console.log('[OCR] Sending image to backend for processing...');
+      const response = await fetch('http://127.0.0.1:5000/api/ocr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ image: base64Image })
       });
 
-      console.log('[OCR] Worker created. Recognizing text...');
-      const { data: { text } } = await worker.recognize(fileOrUrl);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${response.status}`);
+      }
 
-      console.log('[OCR] Recognition complete. Terminating worker...');
-      await worker.terminate();
-
-      console.log('[OCR] Extracted Text:', text);
-      setInputText(text);
-      handleTranslate(text); // Trigger translation
+      const data = await response.json();
+      console.log('[OCR] Extracted Text from backend:', data.text);
+      setInputText(data.text);
+      handleTranslate(data.text); // Trigger translation
     } catch (error) {
       console.error('[OCR] Error during process:', error);
-      setInputText('Lỗi khi trích xuất chữ.');
+      setInputText('Lỗi khi trích xuất chữ: ' + error.message);
     } finally {
       setIsProcessingOCR(false);
     }
@@ -1141,44 +1206,48 @@ export default function Dashboard() {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target.result;
-      console.log('[Doc] Extracted Text:', text.slice(0, 100));
-      setInputText(text);
-      handleTranslate(text);
-    };
-    reader.readAsText(file);
-  };
+    const filename = file.name.toLowerCase();
 
-  const handleWebTranslate = () => {
-    let targetUrl = webUrl.trim();
-    if (!targetUrl) {
-      alert("Vui lòng nhập địa chỉ website!");
-      return;
-    }
+    if (filename.endsWith('.pdf') || filename.endsWith('.docx')) {
+      setIsProcessingDoc(true);
+      setInputText('Đang phân tích tài liệu và trích xuất nội dung...');
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
 
-    // Add http/https if missing
-    if (!/^https?:\/\//i.test(targetUrl)) {
-      targetUrl = 'https://' + targetUrl;
-    }
+        console.log('[Doc] Uploading file to backend for text extraction...');
+        const response = await fetch('http://127.0.0.1:5000/api/document/extract', {
+          method: 'POST',
+          body: formData
+        });
 
-    try {
-      new URL(targetUrl);
-    } catch (e) {
-      alert("Địa chỉ website không hợp lệ!");
-      return;
-    }
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${response.status}`);
+        }
 
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ autoTranslateUrl: targetUrl }, () => {
-        chrome.tabs.create({ url: targetUrl, active: true });
-      });
+        const data = await response.json();
+        console.log('[Doc] Extracted Text from backend:', data.text.slice(0, 100));
+        setInputText(data.text);
+        handleTranslate(data.text); // Trigger translation
+      } catch (error) {
+        console.error('[Doc] Error during document process:', error);
+        setInputText('Lỗi khi đọc tài liệu: ' + error.message);
+      } finally {
+        setIsProcessingDoc(false);
+      }
     } else {
-      alert(`Đang mở để dịch: ${targetUrl} (Lưu ý: Tính năng này chỉ hoạt động đầy đủ khi cài đặt Extension trên Chrome)`);
-      window.open(targetUrl, '_blank');
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target.result;
+        console.log('[Doc] Extracted Text:', text.slice(0, 100));
+        setInputText(text);
+        handleTranslate(text);
+      };
+      reader.readAsText(file);
     }
   };
+
 
   return (
     <div className="gt-container">
@@ -1359,12 +1428,6 @@ export default function Dashboard() {
           >
             <span className="icon"><FileOutlined /></span> Tài liệu
           </button>
-          <button
-            className={`gt-mode-btn ${currentMode === 'web' ? 'active' : ''}`}
-            onClick={() => setCurrentMode('web')}
-          >
-            <span className="icon"><GlobalOutlined /></span> Trang web
-          </button>
           {/* <button 
             className={`gt-mode-btn ${currentMode === 'explain' ? 'active' : ''}`}
             onClick={() => setCurrentMode('explain')}
@@ -1414,25 +1477,7 @@ export default function Dashboard() {
           </div>
 
           {/* Conditional rendering for modes */}
-          {currentMode === 'web' ? (
-            <div className="gt-web-translator">
-              <div className="gt-web-input-container">
-                <div className="gt-web-input-wrapper">
-                  <span className="gt-web-url-icon"><LinkOutlined /></span>
-                  <input
-                    type="text"
-                    placeholder="Nhập địa chỉ website (Ví dụ: wikipedia.org, bbc.com...)"
-                    value={webUrl}
-                    onChange={(e) => setWebUrl(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleWebTranslate(); }}
-                  />
-                  <button className="gt-web-translate-btn" onClick={handleWebTranslate}>
-                    Dịch trang <SwapOutlined />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : currentMode === 'explain' ? (
+          {currentMode === 'explain' ? (
             <div className="gt-text-container">
               <div className="gt-input-box">
                 <textarea
@@ -1515,16 +1560,17 @@ export default function Dashboard() {
                 {currentMode === 'doc' && (
                   <div className="gt-image-upload">
                     <label className="gt-upload-label">
-                      <input type="file" accept=".txt,.md" onChange={handleDocUpload} style={{ display: 'none' }} />
-                      <span className="upload-icon"><FileOutlined /></span> Chọn tài liệu (.txt, .md)
+                      <input type="file" accept=".pdf,.docx,.txt,.md" onChange={handleDocUpload} style={{ display: 'none' }} />
+                      <span className="upload-icon"><FileOutlined /></span> Chọn tài liệu (.pdf, .docx, .txt, .md)
                     </label>
+                    {isProcessingDoc && <div className="ocr-loading">Đang phân tích tài liệu...</div>}
                   </div>
                 )}
                 <textarea
                   placeholder={currentMode === 'image' ? "Chữ trích xuất từ ảnh sẽ hiện ở đây" : (currentMode === 'doc' ? "Nội dung tài liệu sẽ hiện ở đây" : "Nhập văn bản")}
                   value={inputText}
                   onChange={(e) => handleTranslate(e.target.value)}
-                  disabled={isProcessingOCR}
+                  disabled={isProcessingOCR || isProcessingDoc}
                 ></textarea>
                 <div className="gt-box-footer">
                   <div className="footer-left">
@@ -1566,7 +1612,7 @@ export default function Dashboard() {
                         </button>
                         <button
                           className="gt-icon-btn"
-                          title="Không hài lòng (Lần sau dịch lại)"
+                          title="Không hài lòng (Bấm để AI bỏ qua lịch sử và dịch lại ngay lập tức)"
                           onClick={() => handleRate('dislike')}
                           style={{ color: currentRating === 'dislike' ? '#ef4444' : 'inherit' }}
                         >
@@ -1630,7 +1676,10 @@ export default function Dashboard() {
                   </div>
                   <div className="item-meta">
                     <span className="time">{item.time}</span>
-                    <button className="btn-icon"><BookOutlined /></button>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button className="btn-icon" title="Lưu vào Sổ tay" onClick={() => handleSaveFromHistory(item)}><SaveOutlined /></button>
+                      <button className="btn-icon" title="Xóa khỏi lịch sử" style={{ color: '#ef4444' }} onClick={() => deleteHistoryItem(item.id)}><DeleteOutlined /></button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1653,7 +1702,7 @@ export default function Dashboard() {
                     <span className="meaning">{item.meaning}</span>
                   </div>
                   <p className="vocab-context">"{item.context}"</p>
-                  <button className="delete-btn" onClick={() => deleteTerm(item.id)}><DeleteOutlined /></button>
+                  <button className="btn-icon" title="Xóa thuật ngữ" style={{ color: '#ef4444' }} onClick={() => deleteTerm(item.id)}><DeleteOutlined /></button>
                 </div>
               ))}
             </div>
@@ -1681,7 +1730,7 @@ export default function Dashboard() {
                         <strong>Ghi chú:</strong> {item.note}
                       </div>
                     )}
-                    <div className="item-meta" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px' }}>
+                    <div className="item-meta" style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px' }}>
                       <span className="time" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                         {item.timestamp ? new Date(item.timestamp).toLocaleString('vi-VN') : 'Vừa xong'}
                       </span>
@@ -1702,114 +1751,86 @@ export default function Dashboard() {
       {/* Packages / Recharge Selection Modal */}
       {activeFooterTab === 'recharge' && (
         <div className="gt-modal-overlay" onClick={() => setActiveFooterTab(null)}>
-          <div className="gt-modal-content glass animate-slide-up" style={{ maxWidth: '880px', background: 'rgba(15, 15, 15, 0.98)', border: '1px solid rgba(255, 255, 255, 0.25)', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
-            <div className="gt-modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>💎 Chọn Gói Nạp Credit dịch thuật (VNĐ)</h2>
-              <button className="gt-modal-close" onClick={() => setActiveFooterTab(null)} style={{ color: '#aaa' }}>×</button>
+          <div className="gt-modal-content glass animate-slide-up" style={{ maxWidth: '880px', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="gt-modal-header" style={{ borderBottom: '1px solid var(--card-border)' }}>
+              <h2 style={{ color: 'var(--text-primary)', fontSize: '18px', fontWeight: 700 }}>💎 Chọn Gói Nạp Credit dịch thuật (VNĐ)</h2>
+              <button className="gt-modal-close" onClick={() => setActiveFooterTab(null)} style={{ color: 'var(--text-secondary)' }}>×</button>
             </div>
 
-            <div className="gt-modal-body" style={{ color: '#fff', padding: '15px 0 0 0' }}>
+            <div className="gt-modal-body" style={{ color: 'var(--text-primary)', padding: '24px' }}>
               <div style={{ 
-                marginBottom: '20px', fontSize: '14px', color: '#fff', background: 'rgba(59, 130, 246, 0.08)', 
-                padding: '14px 18px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)',
-                lineHeight: '1.6', display: 'flex', flexDirection: 'column', gap: '4px'
+                marginBottom: '24px', fontSize: '14px', color: 'var(--text-primary)', background: 'var(--btn-bg)', 
+                padding: '16px 20px', borderRadius: '10px', border: '1px solid var(--card-border)',
+                lineHeight: '1.6', display: 'flex', flexDirection: 'column', gap: '6px'
               }}>
-                <div style={{ color: '#60a5fa', fontWeight: 700, fontSize: '15px' }}>
+                <div style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: '15px' }}>
                   💰 Số dư hiện tại của bạn: {totalCredit === -1 ? 'Vô hạn' : `${totalCredit.toLocaleString('vi-VN')} VNĐ`}
                 </div>
-                <div style={{ color: '#94a3b8', fontSize: '13px', paddingLeft: '22px' }}>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '13px', paddingLeft: '22px' }}>
                   • Miễn phí: {freeCredit.toLocaleString('vi-VN')} VNĐ
                 </div>
-                <div style={{ color: '#94a3b8', fontSize: '13px', paddingLeft: '22px' }}>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '13px', paddingLeft: '22px' }}>
                   • Đã mua: {purchasedCredit.toLocaleString('vi-VN')} VNĐ
                 </div>
               </div>
               
               <div style={{
                 display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap: '20px', paddingBottom: '10px'
+                gap: '24px', paddingBottom: '10px'
               }}>
                 {/* Basic Package */}
-                <div style={{
-                  background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
-                  justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
-                  boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
-                }} className="pricing-card" onClick={() => { handleOpenRechargeModal('basic'); setActiveFooterTab(null); }}>
+                <div className="pricing-card" onClick={() => { handleOpenRechargeModal('basic'); setActiveFooterTab(null); }}>
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#94a3b8' }}>Gói Cơ Bản</h4>
-                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                      +50.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: 'var(--text-secondary)' }}>Gói Cơ Bản</h4>
+                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: 'var(--text-primary)' }}>
+                      +50.000 <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text-secondary)' }}>creditđ</span>
                     </div>
-                    <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
                       Phù hợp cho lập trình viên dịch tài liệu nhỏ hoặc dùng thử model mới.
                     </p>
                   </div>
                   <div>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>50.000 VNĐ</div>
-                    <button style={{
-                      width: '100%', padding: '10px', background: '#3b82f6', color: '#fff',
-                      border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}>Mua ngay</button>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '12px' }}>50.000 VNĐ</div>
+                    <button className="gt-btn-primary" style={{ width: '100%', padding: '10px' }}>Mua ngay</button>
                   </div>
                 </div>
 
                 {/* Standard Package */}
-                <div style={{
-                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(59, 130, 246, 0.15))',
-                  border: '2px solid #3b82f6',
-                  borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
-                  justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
-                  position: 'relative', boxShadow: '0 8px 25px rgba(59, 130, 246, 0.2)'
-                }} className="pricing-card" onClick={() => { handleOpenRechargeModal('standard'); setActiveFooterTab(null); }}>
+                <div className="pricing-card highlighted" onClick={() => { handleOpenRechargeModal('standard'); setActiveFooterTab(null); }}>
                   <span style={{
-                    position: 'absolute', top: '-10px', right: '15px', background: '#3b82f6',
-                    color: '#fff', fontSize: '10px', fontWeight: 700, padding: '2px 8px',
+                    position: 'absolute', top: '-10px', right: '15px', background: 'var(--accent-primary)',
+                    color: 'var(--btn-primary-text)', fontSize: '10px', fontWeight: 700, padding: '2px 8px',
                     borderRadius: '10px', textTransform: 'uppercase'
                   }}>Bán chạy nhất</span>
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#38bdf8' }}>Gói Tiêu Chuẩn</h4>
-                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                      +200.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: 'var(--accent-primary)' }}>Gói Tiêu Chuẩn</h4>
+                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: 'var(--text-primary)' }}>
+                      +200.000 <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--accent-primary)' }}>creditđ</span>
                     </div>
-                    <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
                       Gói tối ưu nhất cho công việc dịch thuật hàng ngày, giải thích code và tài liệu IT lớn.
                     </p>
                   </div>
                   <div>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginBottom: '12px' }}>200.000 VNĐ</div>
-                    <button style={{
-                      width: '100%', padding: '10px', background: '#3b82f6', color: '#fff',
-                      border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
-                      transition: 'all 0.2s ease', boxShadow: '0 4px 12px rgba(59,130,246,0.3)'
-                    }}>Mua ngay</button>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '12px' }}>200.000 VNĐ</div>
+                    <button className="gt-btn-primary" style={{ width: '100%', padding: '10px' }}>Mua ngay</button>
                   </div>
                 </div>
 
                 {/* Premium Package */}
-                <div style={{
-                  background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column',
-                  justifyContent: 'space-between', transition: 'all 0.3s ease', cursor: 'pointer',
-                  boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
-                }} className="pricing-card" onClick={() => { handleOpenRechargeModal('premium'); setActiveFooterTab(null); }}>
+                <div className="pricing-card" onClick={() => { handleOpenRechargeModal('premium'); setActiveFooterTab(null); }}>
                   <div>
-                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#a78bfa' }}>Gói Cao Cấp</h4>
-                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: '#fff' }}>
-                      +500.000 <span style={{ fontSize: '14px', fontWeight: 400, color: '#94a3b8' }}>creditđ</span>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: 'var(--accent-secondary)' }}>Gói Cao Cấp</h4>
+                    <div style={{ fontSize: '24px', fontWeight: 800, margin: '8px 0', color: 'var(--text-primary)' }}>
+                      +500.000 <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text-secondary)' }}>creditđ</span>
                     </div>
-                    <p style={{ fontSize: '12px', color: '#94a3b8', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '8px 0 16px 0', lineHeight: 1.4 }}>
                       Dành cho doanh nghiệp hoặc lập trình viên chuyên nghiệp dịch khối lượng văn bản khổng lồ.
                     </p>
                   </div>
                   <div>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#a78bfa', marginBottom: '12px' }}>500.000 VNĐ</div>
-                    <button style={{
-                      width: '100%', padding: '10px', background: '#a78bfa', color: '#1e1b4b',
-                      border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}>Mua ngay</button>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-secondary)', marginBottom: '12px' }}>500.000 VNĐ</div>
+                    <button className="gt-btn-primary" style={{ width: '100%', padding: '10px' }}>Mua ngay</button>
                   </div>
                 </div>
               </div>
@@ -1989,8 +2010,21 @@ export default function Dashboard() {
                     fontSize: '14px', outline: 'none', background: 'var(--bg-secondary)', color: 'var(--text-primary)'
                   }}
                 />
+                {!isRegistering && (
+                  <div style={{ textAlign: 'right', marginTop: '-6px' }}>
+                    <span
+                      onClick={handleForgotPassword}
+                      style={{ color: '#6b7280', cursor: 'pointer', fontSize: '12px' }}
+                    >
+                      Quên mật khẩu?
+                    </span>
+                  </div>
+                )}
                 {authError && (
                   <div style={{ fontSize: '13px', color: '#dc2626' }}>{authError}</div>
+                )}
+                {resetMsg && (
+                  <div style={{ fontSize: '13px', color: '#16a34a' }}>{resetMsg}</div>
                 )}
                 <button type="submit" disabled={isSubmittingAuth} style={{
                   background: '#18181b', color: '#fff', border: 'none', borderRadius: '8px',
@@ -2125,60 +2159,94 @@ export default function Dashboard() {
       {/* Mock Payment / Recharge Modal */}
       {isRechargeOpen && (
         <div className="gt-modal-overlay" onClick={() => !isProcessingPayment && setIsRechargeOpen(false)}>
-          <div className="gt-modal-content glass animate-slide-up" style={{ maxWidth: '420px', background: 'rgba(15, 15, 15, 0.98)', border: '1px solid rgba(255, 255, 255, 0.25)', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
-            <div className="gt-modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>💎 Thanh toán & Nạp Credit VNĐ</h2>
-              <button className="gt-modal-close" disabled={isProcessingPayment} onClick={() => setIsRechargeOpen(false)} style={{ color: '#aaa' }}>×</button>
+          <div className="gt-modal-content glass animate-slide-up" style={{ maxWidth: '420px', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="gt-modal-header" style={{ borderBottom: '1px solid var(--card-border)' }}>
+              <h2 style={{ color: 'var(--text-primary)', fontSize: '18px', fontWeight: 700 }}>💎 Thanh toán & Nạp Credit VNĐ</h2>
+              <button className="gt-modal-close" disabled={isProcessingPayment} onClick={() => setIsRechargeOpen(false)} style={{ color: 'var(--text-secondary)' }}>×</button>
             </div>
 
-            <div className="gt-modal-body" style={{ color: '#fff' }}>
+            <div className="gt-modal-body" style={{ color: 'var(--text-primary)', padding: '24px' }}>
               {rechargeSuccess ? (
                 <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                  <div style={{ fontSize: '64px', marginBottom: '16px' }}>🏴</div>
-                  <h3 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 12px 0' }}>Nạp Credit thành công!</h3>
-                  <p style={{ fontSize: '13px', color: '#888888', lineHeight: 1.6, margin: '0 0 24px 0' }}>
+                  <div style={{ fontSize: '64px', marginBottom: '16px' }}>🎉</div>
+                  <h3 style={{ color: 'var(--text-primary)', fontSize: '20px', fontWeight: 700, margin: '0 0 12px 0' }}>Nạp Credit thành công!</h3>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 24px 0' }}>
                     Yêu cầu đã được xác thực thành công. Tài khoản của bạn được cộng thêm <strong>{selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}</strong> credit mua.
                   </p>
-                  <button className="gt-btn-primary" style={{ width: '100%', background: '#ffffff', color: '#000000', border: 'none', fontWeight: 700 }} onClick={() => setIsRechargeOpen(false)}>Quay lại dịch thuật</button>
+                  <button className="gt-btn-primary" style={{ width: '100%', fontWeight: 700 }} onClick={() => setIsRechargeOpen(false)}>Quay lại dịch thuật</button>
                 </div>
               ) : (
                 <div>
-                  <div style={{ background: '#111111', padding: '14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '20px' }}>
-                    <div style={{ fontSize: '11px', color: '#666666', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gói dịch vụ chọn mua:</div>
-                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ background: 'var(--item-bg)', padding: '14px', borderRadius: '8px', border: '1px solid var(--card-border)', marginBottom: '20px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gói dịch vụ chọn mua:</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>
                         {selectedPackage === 'basic' ? 'Gói Cơ bản (+50.000 VNĐ)' : selectedPackage === 'standard' ? 'Gói Tiêu chuẩn (+200.000 VNĐ)' : 'Gói Cao cấp (+500.000 VNĐ)'}
                       </span>
-                      <strong style={{ color: '#ffffff', fontSize: '17px' }}>
+                      <strong style={{ color: 'var(--accent-primary)', fontSize: '17px' }}>
                         {selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}
                       </strong>
                     </div>
                   </div>
 
-                  {/* QR Code from Public */}
-                  <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                    <div style={{
-                      background: '#ffffff', padding: '10px', borderRadius: '8px', display: 'inline-block',
-                      boxShadow: '0 4px 20px rgba(0,0,0,0.5)', marginBottom: '16px'
-                    }}>
-                      <img 
-                        src="/qr.jpg" 
-                        alt="Mã QR Thanh toán" 
-                        style={{ width: '220px', height: 'auto', borderRadius: '6px', display: 'block' }} 
-                      />
-                    </div>
-                    <p style={{ fontSize: '13px', color: '#888888', lineHeight: 1.5, margin: '0 0 10px 0' }}>
-                      Quét mã QR bằng ứng dụng ngân hàng của bạn để thực hiện chuyển khoản.
-                    </p>
-                    <p style={{ fontSize: '11px', color: '#555555', margin: '0 0 15px 0', lineHeight: 1.4 }}>
-                      Sau khi thanh toán thành công, vui lòng nhấn nút <strong>Xác nhận Thanh toán</strong> bên dưới để hệ thống xử lý giao dịch và tự động cộng Credit mua.
-                    </p>
-                  </div>
+                  {/* Dynamic VietQR Code */}
+                  {(() => {
+                    const getPackageAmount = (pkg) => {
+                      if (pkg === 'basic') return 50000;
+                      if (pkg === 'standard') return 200000;
+                      if (pkg === 'premium') return 500000;
+                      return 0;
+                    };
+                    const amount = getPackageAmount(selectedPackage);
+                    const memo = `NAP ${selectedPackage?.toUpperCase() || ''} ${session?.uid ? session.uid.substring(0, 8).toUpperCase() : 'ANON'}`;
+                    const bankBin = '970422'; // MB Bank BIN from 970422
+                    const bankAccount = '0916074273';
+                    const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bankAccount}-compact2.jpg?amount=${amount}&addInfo=${encodeURIComponent(memo)}`;
+
+                    return (
+                      <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                        <div style={{
+                          background: '#ffffff', padding: '10px', borderRadius: '8px', display: 'inline-block',
+                          boxShadow: '0 4px 20px rgba(0,0,0,0.15)', marginBottom: '16px',
+                          border: '1px solid var(--card-border)'
+                        }}>
+                          <img 
+                            src={qrUrl} 
+                            alt="Mã VietQR Chuyển khoản" 
+                            style={{ width: '220px', height: 'auto', borderRadius: '6px', display: 'block' }} 
+                          />
+                        </div>
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.04)', padding: '10px 14px', borderRadius: '8px',
+                          border: '1px dashed rgba(255, 255, 255, 0.1)', marginBottom: '16px',
+                          display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px',
+                          textAlign: 'left'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>Số tiền:</span>
+                            <strong style={{ color: '#10b981' }}>{amount.toLocaleString('vi-VN')} VNĐ</strong>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>Nội dung chuyển khoản:</span>
+                            <strong style={{ color: 'var(--accent-primary)', fontSize: '14px', background: 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '4px' }}>
+                              {memo}
+                            </strong>
+                          </div>
+                        </div>
+                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
+                          Quét mã QR bằng ứng dụng ngân hàng của bạn để thực hiện chuyển khoản tự động.
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '0 0 15px 0', lineHeight: 1.4 }}>
+                          Sau khi chuyển tiền thành công, vui lòng nhấn nút <strong>Xác nhận Thanh toán</strong> bên dưới để hệ thống đối soát giao dịch và tự động cộng Credit mua.
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   <div style={{ marginTop: '28px', display: 'flex', gap: '10px' }}>
                     <button
                       className="gt-btn-outline"
-                      style={{ flex: 1, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent', color: '#888888', borderRadius: '6px', fontWeight: 600 }}
+                      style={{ flex: 1, justifyContent: 'center', height: '40px' }}
                       disabled={isProcessingPayment}
                       onClick={() => setIsRechargeOpen(false)}
                     >
@@ -2186,11 +2254,11 @@ export default function Dashboard() {
                     </button>
                     <button
                       className="gt-btn-primary"
-                      style={{ flex: 2, background: '#ffffff', border: 'none', color: '#000000', borderRadius: '6px', fontWeight: 750 }}
+                      style={{ flex: 2, justifyContent: 'center', height: '40px', fontWeight: 700 }}
                       disabled={isProcessingPayment}
                       onClick={handleConfirmRecharge}
                     >
-                      {isProcessingPayment ? '⌛ Đang xác thực...' : '✓ Xác nhận Thanh toán'}
+                      {isProcessingPayment ? '⌛ Đang xác thực...' : '✓ Xác nhận'}
                     </button>
                   </div>
                 </div>

@@ -150,6 +150,22 @@ export async function loginWithGoogle() {
 }
 
 /**
+ * Send password reset email via Flask backend.
+ */
+export async function resetPassword(email) {
+  const res = await fetch(`${FLASK_BASE_URL}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Không thể gửi email đặt lại mật khẩu.');
+  }
+  return res.json();
+}
+
+/**
  * Log out and clear local session.
  */
 export function logout() {

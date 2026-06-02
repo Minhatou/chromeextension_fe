@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import './AdminDashboard.css';
 import { getSession } from '../api/authClient';
 import {
@@ -8,7 +9,7 @@ import {
   CheckCircleOutlined, CloseCircleOutlined, WarningOutlined,
   SunOutlined, MoonOutlined, LockOutlined, SafetyCertificateOutlined,
   CloudOutlined, RobotOutlined, SettingOutlined, CheckOutlined,
-  StopOutlined, BulbOutlined
+  StopOutlined, BulbOutlined, PoweroffOutlined, DownloadOutlined
 } from '@ant-design/icons';
 
 const API = 'http://127.0.0.1:5000';
@@ -171,6 +172,17 @@ function HistoryTab({ uid, toast }) {
   const [clearing, setClearing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  const exportJson = () => {
+    const data = history.map(h => ({ ENG: h.source_text || '', VIE: h.translated_text || '' }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `history_contributions_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const fetchHistory = useCallback(() => {
     setLoading(true);
     apiPost('/api/admin/history', { uid })
@@ -218,8 +230,8 @@ function HistoryTab({ uid, toast }) {
 
   return (
     <div>
-      <div className="admin-section-title">Lịch sử dịch thuật</div>
-      <div className="admin-section-desc">Xem và xoá toàn bộ lịch sử dịch thuật của hệ thống.</div>
+      <div className="admin-section-title">Lịch sử dịch thuật người dùng đóng góp</div>
+      <div className="admin-section-desc">Xem và xoá toàn bộ lịch sử dịch thuật người dùng đóng góp của hệ thống.</div>
 
       <div className="admin-card">
         <div className="admin-card-header">
@@ -230,6 +242,9 @@ function HistoryTab({ uid, toast }) {
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-ghost btn-sm" onClick={fetchHistory} disabled={loading}>
               <ReloadOutlined spin={loading} /> Làm mới
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={exportJson} disabled={history.length === 0}>
+              <DownloadOutlined /> Xuất JSON
             </button>
             <button
               className="btn btn-danger btn-sm"
@@ -678,6 +693,21 @@ function TransactionsTab({ uid, toast }) {
 
   const totalRevenue = transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
+  const exportXlsx = () => {
+    const rows = transactions.map(t => ({
+      'Mã giao dịch': t.id,
+      'UID Người dùng': t.uid,
+      'Gói dịch vụ': t.package_id === 'basic' ? 'Cơ bản' : t.package_id === 'standard' ? 'Tiêu chuẩn' : 'Cao cấp',
+      'Số tiền (VNĐ)': t.amount || 0,
+      'Hình thức': t.payment_method || 'QR',
+      'Thời gian': t.timestamp ? new Date(t.timestamp).toLocaleString('vi-VN') : '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Giao dịch');
+    XLSX.writeFile(wb, `transactions_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   return (
     <div>
       <div className="admin-section-title">Quản lý giao dịch nạp tiền</div>
@@ -689,9 +719,14 @@ function TransactionsTab({ uid, toast }) {
             Lịch sử giao dịch
             <span className="badge-count">{transactions.length}</span>
           </span>
-          <button className="btn btn-ghost btn-sm" onClick={fetchTransactions} disabled={loading}>
-            <ReloadOutlined spin={loading} /> Làm mới
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" onClick={fetchTransactions} disabled={loading}>
+              <ReloadOutlined spin={loading} /> Làm mới
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={exportXlsx} disabled={transactions.length === 0}>
+              <DownloadOutlined /> Xuất XLSX
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -756,6 +791,21 @@ function TransactionsTab({ uid, toast }) {
 function StatusTab() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [restarting, setRestarting] = useState(false);
+
+  const handleRestart = async () => {
+    if (!window.confirm('Bạn có chắc muốn khởi động lại backend server?')) return;
+    setRestarting(true);
+    try {
+      await fetch(`${API}/api/restart`, { method: 'POST' });
+    } catch {
+      // server may close connection before responding
+    }
+    setTimeout(() => {
+      setRestarting(false);
+      fetchStatus();
+    }, 5000);
+  };
 
   const fetchStatus = useCallback(() => {
     setLoading(true);
@@ -834,9 +884,14 @@ function StatusTab() {
           <div className="admin-card">
             <div className="admin-card-header">
               <span className="admin-card-title">Tóm tắt trạng thái</span>
-              <button className="btn btn-ghost btn-sm" onClick={fetchStatus} disabled={loading}>
-                <ReloadOutlined spin={loading} /> Làm mới
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost btn-sm" onClick={fetchStatus} disabled={loading || restarting}>
+                  <ReloadOutlined spin={loading} /> Làm mới
+                </button>
+                <button className="btn btn-danger btn-sm" onClick={handleRestart} disabled={restarting || loading}>
+                  <PoweroffOutlined spin={restarting} /> {restarting ? 'Đang khởi động lại...' : 'Khởi động lại'}
+                </button>
+              </div>
             </div>
             <table className="admin-table">
               <thead>
