@@ -2,7 +2,7 @@ import { LlmInference, FilesetResolver } from '@mediapipe/tasks-genai';
 
 let llmInference = null;
 let useApi = false;
-const API_URL = 'http://127.0.0.1:5000/api/translate';
+const API_URL = 'https://chromeextension-be.onrender.com/api/translate';
 
 console.log('[Sandbox] Sandbox initialized.');
 
@@ -104,7 +104,7 @@ async function generateViaApi(text, targetLang = 'auto', messageId) {
 
     const data = await response.json();
     console.log('[Sandbox] Data received from API:', data);
-    const translation = data.translation;
+    const translation = parseTranslation(data);
 
     console.log('[Sandbox] Translation extracted:', translation);
 
@@ -120,7 +120,7 @@ async function generateViaApi(text, targetLang = 'auto', messageId) {
 
   } catch (err) {
     console.error('[Sandbox] API Fetch error:', err);
-    throw new Error(`Connection to local AI server failed. Ensure Python backend is running on ${API_URL}`);
+    throw new Error(`Connection to AI server failed. Ensure the backend is running on ${API_URL}`);
   }
 }
 
@@ -130,4 +130,33 @@ function cleanOutput(text) {
     .replace(/^"|"$/g, '')
     .replace(/^Sure, here is the translation:\s*/i, '')
     .replace(/^I cannot translate this text because.*\./i, '');
+}
+
+function parseTranslation(data) {
+  let text = '';
+  if (Array.isArray(data)) {
+    if (data[0] && typeof data[0].generated_text === 'string') {
+      text = data[0].generated_text;
+    }
+  } else if (data) {
+    if (typeof data.translation === 'string') {
+      text = data.translation;
+    } else if (typeof data.generated_text === 'string') {
+      text = data.generated_text;
+    } else if (Array.isArray(data.translation)) {
+      if (data.translation[0] && typeof data.translation[0].generated_text === 'string') {
+        text = data.translation[0].generated_text;
+      }
+    }
+  }
+  
+  if (!text) return '';
+  
+  // Clean up <think> reasoning tags
+  if (text.includes('<think>') && text.includes('</think>')) {
+    text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+  } else {
+    text = text.replace(/<think>/g, '').replace(/<\/think>/g, '');
+  }
+  return text.trim();
 }

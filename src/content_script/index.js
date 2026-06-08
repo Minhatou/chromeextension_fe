@@ -409,7 +409,7 @@ function initShadowDOM() {
     }
     
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/translate/rate', {
+      const response = await fetch('https://chromeextension-be.onrender.com/api/translate/rate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -655,6 +655,35 @@ function isVietnamese(text) {
   return matches > 0 && (matches / text.replace(/\s/g, '').length) > 0.05;
 }
 
+function parseTranslation(data) {
+  let text = '';
+  if (Array.isArray(data)) {
+    if (data[0] && typeof data[0].generated_text === 'string') {
+      text = data[0].generated_text;
+    }
+  } else if (data) {
+    if (typeof data.translation === 'string') {
+      text = data.translation;
+    } else if (typeof data.generated_text === 'string') {
+      text = data.generated_text;
+    } else if (Array.isArray(data.translation)) {
+      if (data.translation[0] && typeof data.translation[0].generated_text === 'string') {
+        text = data.translation[0].generated_text;
+      }
+    }
+  }
+  
+  if (!text) return '';
+  
+  // Clean up <think> reasoning tags
+  if (text.includes('<think>') && text.includes('</think>')) {
+    text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+  } else {
+    text = text.replace(/<think>/g, '').replace(/<\/think>/g, '');
+  }
+  return text.trim();
+}
+
 async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
   let text = forcedText;
   let context = '';
@@ -734,7 +763,7 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
       const modelId = authResult.modelId || 'qwen2';
       const shareTranslation = authResult.shareTranslation === true;
 
-      const response = await fetch('http://127.0.0.1:5000/api/translate', {
+      const response = await fetch('https://chromeextension-be.onrender.com/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -751,7 +780,8 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
       if (response.ok) {
         const data = await response.json();
         stopProgressBar();
-        boxBody.innerHTML = renderMarkdown(data.translation);
+        const translationText = parseTranslation(data);
+        boxBody.innerHTML = renderMarkdown(translationText);
       } else {
         stopProgressBar();
         boxBody.innerHTML = `<i style="color: #ff4a4a;">Lỗi ${targetLang === 'explain' ? 'giải thích thuật ngữ' : targetLang === 'summarize' ? 'tóm tắt' : 'dịch thuật'}.</i>`;
@@ -872,7 +902,7 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
       }
       const userId = session.uid;
 
-      const response = await fetch('http://127.0.0.1:5000/api/translate', {
+      const response = await fetch('https://chromeextension-be.onrender.com/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -932,7 +962,7 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
       }
       const userId = session.uid;
 
-      const response = await fetch('http://127.0.0.1:5000/api/translate', {
+      const response = await fetch('https://chromeextension-be.onrender.com/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -1044,7 +1074,7 @@ async function translatePage() {
     console.log(`[IT Translator] Translating node ${i+1}/${textNodes.length}: "${originalText.slice(0, 30)}..."`);
     
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/translate', {
+      const response = await fetch('https://chromeextension-be.onrender.com/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

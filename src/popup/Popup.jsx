@@ -34,7 +34,7 @@ export default function Popup() {
 
       if (s && s.idToken) {
         console.log("[Auth Popup] Verifying and refreshing credits...");
-        fetch('http://127.0.0.1:5000/api/auth/verify', {
+        fetch('https://chromeextension-be.onrender.com/api/auth/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idToken: s.idToken })

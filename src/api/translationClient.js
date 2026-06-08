@@ -1,4 +1,4 @@
-const BASE_URL = 'http://127.0.0.1:5000'
+const BASE_URL = 'https://chromeextension-be.onrender.com'
 
 /**
  * Check if the Flask backend is up and the model is loaded.
@@ -7,6 +7,35 @@ export async function checkStatus() {
   const response = await fetch(`${BASE_URL}/api/status`)
   if (!response.ok) throw new Error('Backend unreachable')
   return response.json()
+}
+
+function parseTranslation(data) {
+  let text = '';
+  if (Array.isArray(data)) {
+    if (data[0] && typeof data[0].generated_text === 'string') {
+      text = data[0].generated_text;
+    }
+  } else if (data) {
+    if (typeof data.translation === 'string') {
+      text = data.translation;
+    } else if (typeof data.generated_text === 'string') {
+      text = data.generated_text;
+    } else if (Array.isArray(data.translation)) {
+      if (data.translation[0] && typeof data.translation[0].generated_text === 'string') {
+        text = data.translation[0].generated_text;
+      }
+    }
+  }
+  
+  if (!text) return '';
+  
+  // Clean up <think> reasoning tags
+  if (text.includes('<think>') && text.includes('</think>')) {
+    text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+  } else {
+    text = text.replace(/<think>/g, '').replace(/<\/think>/g, '');
+  }
+  return text.trim();
 }
 
 /**
@@ -25,7 +54,11 @@ export async function translateText(text, context = '', targetLang = 'auto', glo
     const err = await response.json()
     throw new Error(err.error || 'Translation failed')
   }
-  return response.json()
+  const data = await response.json();
+  return {
+    ...data,
+    translation: parseTranslation(data)
+  };
 }
 
 /**
@@ -109,11 +142,11 @@ export async function contributeTranslation(uid, email, sourceText, originalTran
 /**
  * Recharge tokens (Mock payment recharge).
  */
-export async function rechargeTokens(uid, packageId, paymentMethod = 'qr') {
+export async function rechargeTokens(uid, packageId, paymentMethod = 'qr', amount = 0) {
   const response = await fetch(`${BASE_URL}/api/user/recharge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uid, package_id: packageId, payment_method: paymentMethod }),
+    body: JSON.stringify({ uid, package_id: packageId, payment_method: paymentMethod, amount }),
   })
   if (!response.ok) {
     const err = await response.json()

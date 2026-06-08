@@ -6,12 +6,12 @@
  * Firebase Console → Project Settings → General → Web API Key
  */
 
-const FLASK_BASE_URL   = 'http://127.0.0.1:5000';
+const FLASK_BASE_URL   = 'https://chromeextension-be.onrender.com';
 
 // ── Local storage helpers ─────────────────────────────────────────────────────
 
-function saveSession(uid, email, role, idToken) {
-  const session = { uid, email, role, idToken, savedAt: Date.now() };
+function saveSession(uid, email, role, idToken, refreshToken) {
+  const session = { uid, email, role, idToken, refreshToken, savedAt: Date.now() };
   if (typeof chrome !== 'undefined' && chrome.storage) {
     chrome.storage.local.set({ authSession: session });
   } else {
@@ -40,6 +40,31 @@ export function getSession() {
   });
 }
 
+/**
+ * Exchange the saved refresh token for a new idToken and save it.
+ */
+export async function refreshSessionToken() {
+  const session = await getSession();
+  if (!session || !session.refreshToken) {
+    throw new Error("No refresh token available");
+  }
+
+  const response = await fetch(`${FLASK_BASE_URL}/api/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: session.refreshToken })
+  });
+
+  if (!response.ok) {
+    clearSession();
+    throw new Error("Failed to refresh session");
+  }
+
+  const data = await response.json();
+  saveSession(session.uid, session.email, session.role, data.idToken, data.refreshToken);
+  return { ...session, idToken: data.idToken, refreshToken: data.refreshToken };
+}
+
 // ── Login / Logout ────────────────────────────────────────────────────────────
 
 export async function registerWithEmail(email, password) {
@@ -54,15 +79,15 @@ export async function registerWithEmail(email, password) {
     throw new Error(err.error || 'Đăng ký thất bại. Vui lòng thử lại.');
   }
 
-  const { uid, email: userEmail, role, idToken } = await flaskRes.json();
-  saveSession(uid, userEmail, role, idToken);
-  return { uid, email: userEmail, role };
+  const { uid, email: userEmail, role, idToken, refreshToken } = await flaskRes.json();
+  saveSession(uid, userEmail, role, idToken, refreshToken);
+  return { uid, email: userEmail, role, idToken, refreshToken };
 }
 
 /**
  * Login with email and password via Flask Backend.
  * Flask will verify credentials and return a token and role.
- * @returns {{ uid, email, role }} session info
+ * @returns {{ uid, email, role, idToken, refreshToken }} session info
  */
 export async function loginWithEmail(email, password) {
   const flaskRes = await fetch(`${FLASK_BASE_URL}/api/auth/login`, {
@@ -76,12 +101,12 @@ export async function loginWithEmail(email, password) {
     throw new Error(err.error || 'Đăng nhập thất bại. Vui lòng thử lại.');
   }
 
-  const { uid, email: userEmail, role, idToken } = await flaskRes.json();
+  const { uid, email: userEmail, role, idToken, refreshToken } = await flaskRes.json();
 
   // Save session locally
-  saveSession(uid, userEmail, role, idToken);
+  saveSession(uid, userEmail, role, idToken, refreshToken);
 
-  return { uid, email: userEmail, role };
+  return { uid, email: userEmail, role, idToken, refreshToken };
 }
 
 /**
@@ -109,13 +134,13 @@ export async function loginWithGoogle() {
     const messageListener = async (event) => {
       if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS') {
         window.removeEventListener('message', messageListener);
-        const { idToken } = event.data;
+        const { idToken, refreshToken } = event.data;
         
         try {
           const flaskRes = await fetch(`${FLASK_BASE_URL}/api/auth/google`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken }),
+            body: JSON.stringify({ idToken, refreshToken }),
           });
 
           if (!flaskRes.ok) {
@@ -124,9 +149,9 @@ export async function loginWithGoogle() {
             return;
           }
 
-          const { uid, email, role, idToken: fbIdToken } = await flaskRes.json();
-          saveSession(uid, email, role, fbIdToken);
-          resolve({ uid, email, role });
+          const { uid, email, role, idToken: fbIdToken, refreshToken: fbRefreshToken } = await flaskRes.json();
+          saveSession(uid, email, role, fbIdToken, fbRefreshToken);
+          resolve({ uid, email, role, idToken: fbIdToken, refreshToken: fbRefreshToken });
         } catch (err) {
           reject(err);
         }

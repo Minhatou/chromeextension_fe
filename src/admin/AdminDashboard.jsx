@@ -12,7 +12,7 @@ import {
   StopOutlined, BulbOutlined, PoweroffOutlined, DownloadOutlined
 } from '@ant-design/icons';
 
-const API = 'http://127.0.0.1:5000';
+const API = 'https://chromeextension-be.onrender.com';
 
 // ── Toast helper ─────────────────────────────────────────────────────────────
 function useToast() {

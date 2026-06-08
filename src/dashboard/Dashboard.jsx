@@ -10,7 +10,7 @@ import {
   contributeTranslation,
   rechargeTokens
 } from '../api/translationClient';
-import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle, resetPassword } from '../api/authClient';
+import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle, resetPassword, refreshSessionToken } from '../api/authClient';
 import { createWorker } from 'tesseract.js';
 import {
   SunOutlined, MoonOutlined,
@@ -23,6 +23,35 @@ import {
   LikeOutlined, LikeFilled, DislikeOutlined, DislikeFilled,
   BulbOutlined, EditOutlined, SaveOutlined
 } from '@ant-design/icons';
+
+function parseTranslation(data) {
+  let text = '';
+  if (Array.isArray(data)) {
+    if (data[0] && typeof data[0].generated_text === 'string') {
+      text = data[0].generated_text;
+    }
+  } else if (data) {
+    if (typeof data.translation === 'string') {
+      text = data.translation;
+    } else if (typeof data.generated_text === 'string') {
+      text = data.generated_text;
+    } else if (Array.isArray(data.translation)) {
+      if (data.translation[0] && typeof data.translation[0].generated_text === 'string') {
+        text = data.translation[0].generated_text;
+      }
+    }
+  }
+  
+  if (!text) return '';
+  
+  // Clean up <think> reasoning tags
+  if (text.includes('<think>') && text.includes('</think>')) {
+    text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+  } else {
+    text = text.replace(/<think>/g, '').replace(/<\/think>/g, '');
+  }
+  return text.trim();
+}
 
 export default function Dashboard() {
   const [inputText, setInputText] = useState('');
@@ -94,9 +123,9 @@ export default function Dashboard() {
   const [totalCredit, setTotalCredit] = useState(100000.0);
   const [modelId, setModelId] = useState(() => {
     try {
-      return localStorage.getItem('modelId') || 'qwen2';
+      return localStorage.getItem('modelId') || 'qwen3';
     } catch {
-      return 'qwen2';
+      return 'qwen3';
     }
   });
   const [shareTranslation, setShareTranslation] = useState(() => {
@@ -113,6 +142,8 @@ export default function Dashboard() {
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isRechargeOpen, setIsRechargeOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState(null);
+  const [customRechargeAmount, setCustomRechargeAmount] = useState(10000);
+  const [selectedCustomAmount, setSelectedCustomAmount] = useState(0);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('qr');
   const [creditCardNum, setCreditCardNum] = useState('');
@@ -137,7 +168,7 @@ export default function Dashboard() {
     }
 
     if (session && session.uid) {
-      fetch('http://127.0.0.1:5000/api/user/share_translation', {
+      fetch('https://chromeextension-be.onrender.com/api/user/share_translation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid, share_translation: shareTranslation })
@@ -164,7 +195,7 @@ export default function Dashboard() {
     }
 
     if (session && session.uid) {
-      fetch('http://127.0.0.1:5000/api/user/theme', {
+      fetch('https://chromeextension-be.onrender.com/api/user/theme', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid, theme: theme })
@@ -187,12 +218,26 @@ export default function Dashboard() {
   useEffect(() => {
     if (session && session.uid && session.idToken) {
       console.log("[Auth] Session UID changed or updated, fetching fresh credit balance...");
-      fetch('http://127.0.0.1:5000/api/auth/verify', {
+      fetch('https://chromeextension-be.onrender.com/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken: session.idToken })
       })
-        .then(r => {
+        .then(async r => {
+          if (r.status === 401 || r.status === 403) {
+            console.warn("[Auth] Token expired (401/403). Attempting silent token refresh...");
+            try {
+              const newSession = await refreshSessionToken();
+              console.log("[Auth] Token refreshed successfully!");
+              setSession(newSession);
+              throw new Error("Token expired, retrying with refreshed token...");
+            } catch (refreshErr) {
+              console.error("[Auth] Silent token refresh failed:", refreshErr);
+              logout();
+              setSession(null);
+              throw new Error("Token expired or invalid");
+            }
+          }
           if (r.ok) return r.json();
           throw new Error("Token verification failed");
         })
@@ -324,7 +369,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (session && session.uid) {
       console.log("[Glossary] Fetching from Firestore for user:", session.uid);
-      fetch('http://127.0.0.1:5000/api/glossary', {
+      fetch('https://chromeextension-be.onrender.com/api/glossary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid })
@@ -340,7 +385,7 @@ export default function Dashboard() {
         .catch(err => console.error("[Glossary] Fetch error:", err));
 
       console.log("[History] Fetching from Firestore for user:", session.uid);
-      fetch('http://127.0.0.1:5000/api/history', {
+      fetch('https://chromeextension-be.onrender.com/api/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid })
@@ -525,7 +570,7 @@ export default function Dashboard() {
 
           if (session && session.uid && !isUpdate) {
             console.log("[History] Saving new translation to Firestore for user:", session.uid);
-            fetch('http://127.0.0.1:5000/api/history/add', {
+            fetch('https://chromeextension-be.onrender.com/api/history/add', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ uid: session.uid, source: inputText, target: outputText, time: "Vừa xong" })
@@ -583,7 +628,7 @@ export default function Dashboard() {
     if (session && session.uid) {
       console.log("[Glossary] Saving to Firestore for user:", session.uid, newTerm.trim());
       try {
-        const res = await fetch('http://127.0.0.1:5000/api/glossary/add', {
+        const res = await fetch('https://chromeextension-be.onrender.com/api/glossary/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid: session.uid, term: newTerm.trim(), meaning: newMeaning.trim(), context: newContext.trim() || "Thêm thủ công" })
@@ -626,7 +671,7 @@ export default function Dashboard() {
     if (session && session.uid) {
       console.log("[Glossary] Deleting from Firestore:", id);
       try {
-        const res = await fetch('http://127.0.0.1:5000/api/glossary/delete', {
+        const res = await fetch('https://chromeextension-be.onrender.com/api/glossary/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid: session.uid, id })
@@ -685,7 +730,7 @@ export default function Dashboard() {
     if (session && session.uid) {
       try {
         console.log("[History] Clearing from Firestore for user:", session.uid);
-        await fetch('http://127.0.0.1:5000/api/history/clear', {
+        await fetch('https://chromeextension-be.onrender.com/api/history/clear', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid: session.uid })
@@ -833,7 +878,7 @@ export default function Dashboard() {
     setIsExplaining(true);
     setExplainOutput('Đang giải thích...');
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/translate', {
+      const res = await fetch('https://chromeextension-be.onrender.com/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, context: '', target_lang: 'explain', glossary: {}, glossary_mode: 'both', user_id: session.uid, model_id: modelId, share_translation: shareTranslation })
@@ -842,7 +887,7 @@ export default function Dashboard() {
         setExplainOutput('Lỗi: Bạn đã hết credit dịch thuật. Vui lòng nạp thêm credit để tiếp tục!');
       } else if (res.ok) {
         const data = await res.json();
-        setExplainOutput(data.translation || 'Không có kết quả.');
+        setExplainOutput(parseTranslation(data) || 'Không có kết quả.');
         if (data.total_credit !== undefined) {
           setTotalCredit(data.total_credit);
           setFreeCredit(data.free_credit);
@@ -873,7 +918,7 @@ export default function Dashboard() {
     setIsSummarizing(true);
     setSummarizeOutput('Đang tóm tắt...');
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/translate', {
+      const res = await fetch('https://chromeextension-be.onrender.com/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, context: '', target_lang: 'summarize', glossary: {}, glossary_mode: 'both', user_id: session.uid, model_id: modelId, share_translation: shareTranslation })
@@ -882,7 +927,7 @@ export default function Dashboard() {
         setSummarizeOutput('Lỗi: Bạn đã hết credit dịch thuật. Vui lòng nạp thêm credit để tiếp tục!');
       } else if (res.ok) {
         const data = await res.json();
-        setSummarizeOutput(data.translation || 'Không có kết quả.');
+        setSummarizeOutput(parseTranslation(data) || 'Không có kết quả.');
         if (data.total_credit !== undefined) {
           setTotalCredit(data.total_credit);
           setFreeCredit(data.free_credit);
@@ -900,8 +945,9 @@ export default function Dashboard() {
     }
   };
 
-  const handleOpenRechargeModal = (packageId) => {
+  const handleOpenRechargeModal = (packageId, customAmount = 0) => {
     setSelectedPackage(packageId);
+    setSelectedCustomAmount(customAmount);
     setPaymentMethod('qr');
     setCreditCardNum('');
     setCreditCardExp('');
@@ -924,7 +970,7 @@ export default function Dashboard() {
     await new Promise(resolve => setTimeout(resolve, 1800));
     
     try {
-      const res = await rechargeTokens(session.uid, selectedPackage, paymentMethod);
+      const res = await rechargeTokens(session.uid, selectedPackage, paymentMethod, selectedCustomAmount);
       if (res.success) {
         setFreeCredit(res.free_credit);
         setPurchasedCredit(res.purchased_credit);
@@ -978,7 +1024,7 @@ export default function Dashboard() {
     if (session && session.uid) {
       console.log("[Glossary] Saving from translate to Firestore for user:", session.uid);
       try {
-        const res = await fetch('http://127.0.0.1:5000/api/glossary/add', {
+        const res = await fetch('https://chromeextension-be.onrender.com/api/glossary/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid: session.uid, term: inputText, meaning: outputText, context: "Từ bản dịch" })
@@ -1166,7 +1212,7 @@ export default function Dashboard() {
       }
 
       console.log('[OCR] Sending image to backend for processing...');
-      const response = await fetch('http://127.0.0.1:5000/api/ocr', {
+      const response = await fetch('https://chromeextension-be.onrender.com/api/ocr', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1216,7 +1262,7 @@ export default function Dashboard() {
         formData.append('file', file);
 
         console.log('[Doc] Uploading file to backend for text extraction...');
-        const response = await fetch('http://127.0.0.1:5000/api/document/extract', {
+        const response = await fetch('https://chromeextension-be.onrender.com/api/document/extract', {
           method: 'POST',
           body: formData
         });
@@ -1833,6 +1879,55 @@ export default function Dashboard() {
                     <button className="gt-btn-primary" style={{ width: '100%', padding: '10px' }}>Mua ngay</button>
                   </div>
                 </div>
+
+                {/* Custom Package */}
+                <div className="pricing-card" style={{ cursor: 'default', minHeight: '340px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }} onClick={(e) => e.stopPropagation()}>
+                  <div>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: 'var(--text-primary)' }}>Gói Tự Chọn</h4>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '8px 0 12px 0', lineHeight: 1.4 }}>
+                      Nhập số tiền bạn muốn nạp vào tài khoản (tối thiểu là 1.000 VNĐ).
+                    </p>
+                    <div style={{ margin: '10px 0' }} onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="number" 
+                        min="1000"
+                        placeholder="Số tiền (VNĐ)..."
+                        value={customRechargeAmount || ''}
+                        onChange={(e) => setCustomRechargeAmount(parseInt(e.target.value) || 0)}
+                        className="gt-input"
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-secondary)',
+                          color: 'var(--text-primary)',
+                          fontSize: '14px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '12px' }}>
+                      {(customRechargeAmount || 0).toLocaleString('vi-VN')} VNĐ
+                    </div>
+                    <button 
+                      className="gt-btn-primary" 
+                      style={{ width: '100%', padding: '10px' }}
+                      onClick={() => {
+                        if (!customRechargeAmount || customRechargeAmount < 1000) {
+                          alert("Số tiền nạp tối thiểu là 1.000 VNĐ!");
+                          return;
+                        }
+                        handleOpenRechargeModal('custom', customRechargeAmount);
+                        setActiveFooterTab(null);
+                      }}
+                    >
+                      Mua ngay
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2171,7 +2266,7 @@ export default function Dashboard() {
                   <div style={{ fontSize: '64px', marginBottom: '16px' }}>🎉</div>
                   <h3 style={{ color: 'var(--text-primary)', fontSize: '20px', fontWeight: 700, margin: '0 0 12px 0' }}>Nạp Credit thành công!</h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 24px 0' }}>
-                    Yêu cầu đã được xác thực thành công. Tài khoản của bạn được cộng thêm <strong>{selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}</strong> credit mua.
+                    Yêu cầu đã được xác thực thành công. Tài khoản của bạn được cộng thêm <strong>{selectedPackage === 'custom' ? `${selectedCustomAmount.toLocaleString('vi-VN')} VNĐ` : selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}</strong> credit mua.
                   </p>
                   <button className="gt-btn-primary" style={{ width: '100%', fontWeight: 700 }} onClick={() => setIsRechargeOpen(false)}>Quay lại dịch thuật</button>
                 </div>
@@ -2181,10 +2276,10 @@ export default function Dashboard() {
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gói dịch vụ chọn mua:</div>
                     <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>
-                        {selectedPackage === 'basic' ? 'Gói Cơ bản (+50.000 VNĐ)' : selectedPackage === 'standard' ? 'Gói Tiêu chuẩn (+200.000 VNĐ)' : 'Gói Cao cấp (+500.000 VNĐ)'}
+                        {selectedPackage === 'custom' ? `Gói Tự Chọn (+${selectedCustomAmount.toLocaleString('vi-VN')} VNĐ)` : selectedPackage === 'basic' ? 'Gói Cơ bản (+50.000 VNĐ)' : selectedPackage === 'standard' ? 'Gói Tiêu chuẩn (+200.000 VNĐ)' : 'Gói Cao cấp (+500.000 VNĐ)'}
                       </span>
                       <strong style={{ color: 'var(--accent-primary)', fontSize: '17px' }}>
-                        {selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}
+                        {selectedPackage === 'custom' ? `${selectedCustomAmount.toLocaleString('vi-VN')}đ` : selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}
                       </strong>
                     </div>
                   </div>
@@ -2195,6 +2290,7 @@ export default function Dashboard() {
                       if (pkg === 'basic') return 50000;
                       if (pkg === 'standard') return 200000;
                       if (pkg === 'premium') return 500000;
+                      if (pkg === 'custom') return selectedCustomAmount;
                       return 0;
                     };
                     const amount = getPackageAmount(selectedPackage);
