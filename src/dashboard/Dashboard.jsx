@@ -8,7 +8,8 @@ import {
   updateSavedTranslationNote,
   rateTranslation,
   contributeTranslation,
-  rechargeTokens
+  rechargeTokens,
+  checkStatus
 } from '../api/translationClient';
 import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle, resetPassword, refreshSessionToken } from '../api/authClient';
 import { createWorker } from 'tesseract.js';
@@ -129,6 +130,10 @@ export default function Dashboard() {
       return 'qwen3';
     }
   });
+  const [availableModels, setAvailableModels] = useState([
+    { model_id: 'qwen2', name: 'Qwen2-1.5b', input_price_1m: 5000.0, output_price_1m: 15000.0 },
+    { model_id: 'qwen3', name: 'Qwen3-1.7b', input_price_1m: 7000.0, output_price_1m: 21000.0 }
+  ]);
   const [shareTranslation, setShareTranslation] = useState(() => {
     try {
       return localStorage.getItem('shareTranslation') === 'true';
@@ -475,6 +480,12 @@ export default function Dashboard() {
           if (changes.inferenceMode) {
             setInferenceMode(changes.inferenceMode.newValue);
           }
+          if (changes.modelId) {
+            setModelId(changes.modelId.newValue);
+          }
+          if (changes.shareTranslation) {
+            setShareTranslation(changes.shareTranslation.newValue);
+          }
         }
       };
       chrome.storage.onChanged.addListener(handleStorageChange);
@@ -497,7 +508,9 @@ export default function Dashboard() {
         'translationHistory',
         'glossaryEnabled',
         'glossaryMode',
-        'inferenceMode'
+        'inferenceMode',
+        'modelId',
+        'shareTranslation'
       ], (result) => {
         if (result.glossary) {
           setSavedVocabulary(result.glossary);
@@ -522,6 +535,12 @@ export default function Dashboard() {
           setInferenceMode(result.inferenceMode);
           setStats(prev => ({ ...prev, activeMode: result.inferenceMode === 'api' ? 'API Mode' : 'Local Mode' }));
         }
+        if (result.modelId) {
+          setModelId(result.modelId);
+        }
+        if (result.shareTranslation !== undefined) {
+          setShareTranslation(result.shareTranslation);
+        }
       });
     } else {
       // Fallback for local development in browser tab
@@ -530,6 +549,8 @@ export default function Dashboard() {
       const localEnabled = localStorage.getItem('glossaryEnabled');
       const localMode = localStorage.getItem('glossaryMode');
       const localInf = localStorage.getItem('inferenceMode');
+      const localModelId = localStorage.getItem('modelId');
+      const localShareTranslation = localStorage.getItem('shareTranslation');
 
       if (localGlossary) {
         const parsed = JSON.parse(localGlossary);
@@ -555,7 +576,23 @@ export default function Dashboard() {
         setInferenceMode(localInf);
         setStats(prev => ({ ...prev, activeMode: localInf === 'api' ? 'API Mode' : 'Local Mode' }));
       }
+      if (localModelId) {
+        setModelId(localModelId);
+      }
+      if (localShareTranslation !== null) {
+        setShareTranslation(localShareTranslation === 'true');
+      }
     }
+  }, []);
+
+  useEffect(() => {
+    checkStatus()
+      .then(data => {
+        if (data && data.models && data.models.length > 0) {
+          setAvailableModels(data.models);
+        }
+      })
+      .catch(err => console.error("Error fetching available models:", err));
   }, []);
 
   useEffect(() => {
@@ -2102,8 +2139,11 @@ export default function Dashboard() {
                       onChange={(e) => setModelId(e.target.value)}
                       className="gt-select"
                   >
-                    <option value="qwen2">Qwen2-1.5b (5đ/15đ trên 1k tokens)</option>
-                    <option value="qwen3">Qwen3-1.7b (7đ/21đ trên 1k tokens)</option>
+                    {availableModels.map(model => (
+                      <option key={model.model_id} value={model.model_id}>
+                        {model.name} ({(model.input_price_1m / 1000).toLocaleString('vi-VN')}đ/{(model.output_price_1m / 1000).toLocaleString('vi-VN')}đ trên 1k tokens)
+                      </option>
+                    ))}
                   </select>
                 </div>
 
