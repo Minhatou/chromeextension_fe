@@ -1,4 +1,4 @@
-const BASE_URL = 'https://chromeextension-be.onrender.com'
+const BASE_URL = 'https://hvmndoan-production.up.railway.app'
 
 /**
  * Check if the Flask backend is up and the model is loaded.

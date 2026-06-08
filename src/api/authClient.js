@@ -6,7 +6,7 @@
  * Firebase Console → Project Settings → General → Web API Key
  */
 
-const FLASK_BASE_URL   = 'https://chromeextension-be.onrender.com';
+const FLASK_BASE_URL   = 'https://hvmndoan-production.up.railway.app';
 
 // ── Local storage helpers ─────────────────────────────────────────────────────
 

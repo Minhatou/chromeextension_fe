@@ -1,6 +1,6 @@
 // Background service worker for IT Translator Chrome Extension
 
-const BASE_URL = 'https://chromeextension-be.onrender.com'
+const BASE_URL = 'https://hvmndoan-production.up.railway.app'
 
 // Register the context menu entry when the extension is installed/updated
 chrome.runtime.onInstalled.addListener(() => {

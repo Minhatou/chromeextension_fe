@@ -409,7 +409,7 @@ function initShadowDOM() {
     }
     
     try {
-      const response = await fetch('https://chromeextension-be.onrender.com/api/translate/rate', {
+      const response = await fetch('https://hvmndoan-production.up.railway.app/api/translate/rate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -763,7 +763,7 @@ async function onTranslateRequest(targetLang = 'auto', forcedText = '') {
       const modelId = authResult.modelId || 'qwen2';
       const shareTranslation = authResult.shareTranslation === true;
 
-      const response = await fetch('https://chromeextension-be.onrender.com/api/translate', {
+      const response = await fetch('https://hvmndoan-production.up.railway.app/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -902,7 +902,7 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
       }
       const userId = session.uid;
 
-      const response = await fetch('https://chromeextension-be.onrender.com/api/translate', {
+      const response = await fetch('https://hvmndoan-production.up.railway.app/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -962,7 +962,7 @@ async function performInlineReplace(text, activeEl, isInput, start, end) {
       }
       const userId = session.uid;
 
-      const response = await fetch('https://chromeextension-be.onrender.com/api/translate', {
+      const response = await fetch('https://hvmndoan-production.up.railway.app/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -1074,7 +1074,7 @@ async function translatePage() {
     console.log(`[IT Translator] Translating node ${i+1}/${textNodes.length}: "${originalText.slice(0, 30)}..."`);
     
     try {
-      const response = await fetch('https://chromeextension-be.onrender.com/api/translate', {
+      const response = await fetch('https://hvmndoan-production.up.railway.app/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react'
 import { checkStatus } from '../api/translationClient'
 import { loginWithEmail, registerWithEmail, logout, getSession, loginWithGoogle, resetPassword } from '../api/authClient'
+import {
+  ThunderboltFilled,
+  CrownOutlined,
+  UserOutlined,
+  FormOutlined,
+  LockOutlined,
+  DashboardOutlined,
+  CloseCircleFilled,
+  CheckCircleFilled,
+  ExclamationCircleFilled
+} from '@ant-design/icons'
 
 export default function Popup() {
   const [status, setStatus] = useState(null)
@@ -34,7 +45,7 @@ export default function Popup() {
 
       if (s && s.idToken) {
         console.log("[Auth Popup] Verifying and refreshing credits...");
-        fetch('https://chromeextension-be.onrender.com/api/auth/verify', {
+        fetch('https://hvmndoan-production.up.railway.app/api/auth/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idToken: s.idToken })
@@ -140,10 +151,10 @@ export default function Popup() {
 
   return (
     <div className="popup-container">
-      <header className="popup-header">
-        <div className="popup-logo">
-          <span className="logo-icon">⚡</span>
-          <span className="logo-text">DevBridge</span>
+      <header className="popup-header" style={{ marginBottom: '4px' }}>
+        <div className="popup-logo" style={{ display: 'flex', alignItems: 'center' }}>
+          <ThunderboltFilled style={{ fontSize: '18px', color: 'var(--accent)', marginRight: '6px' }} />
+          <span className="logo-text" style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)' }}>DevBridge</span>
         </div>
         <div
           className={`status-dot ${!status && !error ? 'checking' : online ? 'online' : 'offline'}`}
@@ -151,29 +162,13 @@ export default function Popup() {
         />
       </header>
 
-      {/* ── Mode Switcher ── */}
-      <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f4f4f5', padding: '8px 12px', borderRadius: '8px' }}>
-        <span style={{ fontSize: '12px', fontWeight: 600, color: "#18181b" }}>Chế độ dịch:</span>
-        <button
-          onClick={toggleInferenceMode}
-          style={{
-            background: inferenceMode === 'api' ? '#18181b' : '#3b82f6',
-            color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '6px',
-            fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-            transition: 'background 0.2s'
-          }}
-        >
-          {inferenceMode === 'api' ? '☁️ API (Máy chủ)' : '💻 Local (Thiết bị)'}
-        </button>
-      </div>
-
       {/* ── Backend Status Card (Admin only) ── */}
       {session?.role === 'admin' && (
-        <div className="status-card" style={{ marginTop: '10px' }}>
+        <div className="status-card" style={{ marginTop: '6px' }}>
           {error ? (
             <>
-              <div className="status-row error">
-                <span className="icon">🔴</span>
+              <div className="status-row error" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CloseCircleFilled style={{ color: 'var(--red)' }} />
                 <span>Backend is <strong>offline</strong></span>
               </div>
               <p className="hint">Start the Flask server:<br /><code>python app.py</code></p>
@@ -185,8 +180,12 @@ export default function Popup() {
             </div>
           ) : (
             <>
-              <div className={`status-row ${modelLoaded ? 'success' : 'warn'}`}>
-                <span className="icon">{modelLoaded ? '🟢' : '🟡'}</span>
+              <div className={`status-row ${modelLoaded ? 'success' : 'warn'}`} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {modelLoaded ? (
+                  <CheckCircleFilled style={{ color: 'var(--green)' }} />
+                ) : (
+                  <ExclamationCircleFilled style={{ color: 'var(--yellow)' }} />
+                )}
                 <span>
                   Backend <strong>online</strong> · Model {modelLoaded ? 'loaded' : 'not loaded'}
                 </span>
@@ -201,47 +200,63 @@ export default function Popup() {
 
       {/* ── Auth Section (only shown when backend is online) ── */}
       {online && (
-        <div style={{ marginTop: '10px' }}>
+        <div style={{ marginTop: '6px' }}>
           {authLoading ? (
-            <div style={{ textAlign: 'center', color: '#888', fontSize: '12px' }}>
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', padding: '12px 0' }}>
               Đang kiểm tra tài khoản...
             </div>
           ) : session ? (
             /* ── Logged In: show user info + logout ── */
             <div style={{
-              background: '#f4f4f5', borderRadius: '10px', padding: '10px 12px',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px'
+              background: 'var(--surface)', borderRadius: '10px', padding: '12px 14px',
+              border: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', justifyBehavior: 'space-between', justifyContent: 'space-between', gap: '8px'
             }}>
-              <div style={{ fontSize: '12px', lineHeight: 1.4 }}>
-                <div style={{ fontWeight: 700, color: '#18181b' }}>{session.email}</div>
+              <div style={{ fontSize: '12px', lineHeight: 1.4, overflow: 'hidden' }}>
+                <div style={{ fontWeight: 700, color: 'var(--text)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{session.email}</div>
                 <div style={{
-                  display: 'inline-block', marginTop: '3px',
-                  background: session.role === 'admin' ? '#18181b' : '#e5e5e5',
-                  color: session.role === 'admin' ? '#fff' : '#52525b',
+                  display: 'inline-block', marginTop: '4px',
+                  background: session.role === 'admin' ? 'var(--surface-2)' : 'rgba(255, 255, 255, 0.08)',
+                  color: session.role === 'admin' ? 'var(--text)' : 'var(--text-muted)',
                   fontSize: '10px', fontWeight: 600,
-                  padding: '1px 8px', borderRadius: '999px'
+                  padding: '2px 8px', borderRadius: '999px',
+                  border: '1px solid var(--border)'
                 }}>
-                  {session.role === 'admin' ? '👑 Admin' : '👤 User'}
+                  {session.role === 'admin' ? (
+                    <><CrownOutlined style={{ marginRight: '4px' }} /> Admin</>
+                  ) : (
+                    <><UserOutlined style={{ marginRight: '4px' }} /> User</>
+                  )}
                 </div>
               </div>
               <button onClick={handleLogout} style={{
-                background: 'none', border: '1px solid #d4d4d8',
-                borderRadius: '6px', padding: '4px 10px',
-                fontSize: '11px', cursor: 'pointer', color: '#71717a', fontWeight: 600
-              }}>
+                background: 'rgba(255, 255, 255, 0.04)', border: '1px solid var(--border)',
+                borderRadius: '8px', padding: '6px 12px',
+                fontSize: '11px', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600,
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; }}
+              onMouseOut={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+              >
                 Đăng xuất
               </button>
             </div>
           ) : (
             /* ── Not Logged In: show auth form ── */
-            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#18181b', marginBottom: '2px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>{isRegistering ? '📝 Đăng ký tài khoản mới' : '🔐 Đăng nhập tài khoản'}</span>
+            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)', marginBottom: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {isRegistering ? (
+                    <><FormOutlined /> Đăng ký tài khoản</>
+                  ) : (
+                    <><LockOutlined /> Đăng nhập tài khoản</>
+                  )}
+                </span>
                 <span
                   onClick={() => { setIsRegistering(!isRegistering); setAuthError(''); }}
                   style={{ color: '#3b82f6', cursor: 'pointer', fontSize: '11px', fontWeight: 500 }}
                 >
-                  {isRegistering ? 'Đã có tài khoản?' : 'Tạo tài khoản'}
+                  {isRegistering ? 'Đăng nhập' : 'Tạo tài khoản'}
                 </span>
               </div>
               <input
@@ -251,9 +266,10 @@ export default function Popup() {
                 onChange={e => setEmail(e.target.value)}
                 required
                 style={{
-                  padding: '7px 10px', borderRadius: '8px',
-                  border: '1px solid #d4d4d8', fontSize: '12px',
-                  outline: 'none', background: '#fafafa'
+                  padding: '8px 12px', borderRadius: '8px',
+                  border: '1px solid var(--border)', fontSize: '12px',
+                  outline: 'none', background: 'var(--surface)', color: 'var(--text)',
+                  boxSizing: 'border-box'
                 }}
               />
               <input
@@ -263,55 +279,57 @@ export default function Popup() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 style={{
-                  padding: '7px 10px', borderRadius: '8px',
-                  border: '1px solid #d4d4d8', fontSize: '12px',
-                  outline: 'none', background: '#fafafa'
+                  padding: '8px 12px', borderRadius: '8px',
+                  border: '1px solid var(--border)', fontSize: '12px',
+                  outline: 'none', background: 'var(--surface)', color: 'var(--text)',
+                  boxSizing: 'border-box'
                 }}
               />
               {!isRegistering && (
                 <div style={{ textAlign: 'right', marginTop: '-4px' }}>
                   <span
                     onClick={handleForgotPassword}
-                    style={{ color: '#6b7280', cursor: 'pointer', fontSize: '11px' }}
+                    style={{ color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px' }}
                   >
                     Quên mật khẩu?
                   </span>
                 </div>
               )}
               {authError && (
-                <div style={{ fontSize: '11px', color: '#dc2626' }}>{authError}</div>
+                <div style={{ fontSize: '11px', color: 'var(--red)' }}>{authError}</div>
               )}
               {resetMsg && (
-                <div style={{ fontSize: '11px', color: '#16a34a' }}>{resetMsg}</div>
+                <div style={{ fontSize: '11px', color: 'var(--green)' }}>{resetMsg}</div>
               )}
               <button type="submit" disabled={isSubmitting} style={{
-                background: '#18181b', color: '#fff',
-                border: 'none', borderRadius: '8px', padding: '8px',
-                fontSize: '13px', fontWeight: 600,
+                background: 'var(--text)', color: 'var(--bg)',
+                border: 'none', borderRadius: '8px', padding: '9px',
+                fontSize: '13px', fontWeight: 700,
                 cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                opacity: isSubmitting ? 0.7 : 1
+                opacity: isSubmitting ? 0.7 : 1,
+                transition: 'opacity 0.2s'
               }}>
                 {isSubmitting ? 'Đang xử lý...' : (isRegistering ? 'Đăng ký' : 'Đăng nhập')}
               </button>
-              <div style={{ display: 'flex', alignItems: 'center', margin: '4px 0', gap: '8px' }}>
-                <div style={{ flex: 1, height: '1px', background: '#e4e4e7' }}></div>
-                <span style={{ fontSize: '9px', color: '#a1a1aa', fontWeight: 600 }}>HOẶC</span>
-                <div style={{ flex: 1, height: '1px', background: '#e4e4e7' }}></div>
+              <div style={{ display: 'flex', alignItems: 'center', margin: '2px 0', gap: '8px' }}>
+                <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600 }}>HOẶC</span>
+                <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
               </div>
               <button
                 type="button"
                 onClick={handleGoogleAuth}
                 disabled={isSubmitting}
                 style={{
-                  background: '#ffffff', color: '#18181b',
-                  border: '1px solid #e4e4e7', borderRadius: '8px', padding: '8px',
+                  background: 'var(--surface)', color: 'var(--text)',
+                  border: '1px solid var(--border)', borderRadius: '8px', padding: '8px',
                   fontSize: '12px', fontWeight: 600,
                   cursor: isSubmitting ? 'not-allowed' : 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   transition: 'background 0.2s'
                 }}
-                onMouseOver={e => e.currentTarget.style.backgroundColor = '#f4f4f5'}
-                onMouseOut={e => e.currentTarget.style.backgroundColor = '#ffffff'}
+                onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--surface-2)'}
+                onMouseOut={e => e.currentTarget.style.backgroundColor = 'var(--surface)'}
               >
                 <svg viewBox="0 0 24 24" width="14" height="14" style={{ display: 'inline-block' }}>
                   <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.355 0 3.36 2.655 1.345 6.527l3.921 3.238z" />
@@ -326,50 +344,27 @@ export default function Popup() {
         </div>
       )}
 
-
       {/* ── Open Dashboard ── */}
       <button
         className="dashboard-btn"
         onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL('src/dashboard/index.html') })}
         style={{
-          marginTop: '8px', background: '#ffffff', color: '#000000',
-          border: 'none', padding: '10px 16px', borderRadius: '10px',
-          fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+          marginTop: '6px', 
+          background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', 
+          color: '#ffffff',
+          border: 'none', padding: '11px 16px', borderRadius: '10px',
+          fontSize: '13px', fontWeight: '700', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: '8px', width: '100%', transition: 'transform 0.2s, background-color 0.2s'
+          gap: '6px', width: '100%', 
+          boxShadow: '0 4px 14px rgba(59, 130, 246, 0.3)',
+          transition: 'all 0.2s ease'
         }}
-        onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.backgroundColor = '#e5e5e5'; }}
-        onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.backgroundColor = '#ffffff'; }}
+        onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(59, 130, 246, 0.4)'; }}
+        onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(59, 130, 246, 0.3)'; }}
       >
-        📊 Mở Dashboard
-      </button>
-
-      {/* ── Translate Whole Page ── */}
-      <button
-        className="translate-page-btn"
-        onClick={() => {
-          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]) {
-              chrome.tabs.sendMessage(tabs[0].id, { type: 'TRANSLATE_PAGE_CMD' }, () => {
-                if (chrome.runtime.lastError) {
-                  alert('Vui lòng tải lại trang (F5) web bạn muốn dịch. Mỗi lần reload extension, bạn cần F5 lại trang web để kết nối lại.');
-                }
-              });
-            }
-          });
-        }}
-        style={{
-          marginTop: '8px', background: '#18181b', color: '#ffffff',
-          border: '1px solid rgba(255, 255, 255, 0.15)', padding: '10px 16px',
-          borderRadius: '10px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: '8px', width: '100%', transition: 'transform 0.2s, background-color 0.2s'
-        }}
-        onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.backgroundColor = '#27272a'; }}
-        onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.backgroundColor = '#18181b'; }}
-      >
-        🌐 Dịch toàn trang
+        <DashboardOutlined style={{ fontSize: '14px' }} /> Mở Dashboard
       </button>
     </div>
   )
 }
+

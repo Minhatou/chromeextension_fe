@@ -9,10 +9,11 @@ import {
   CheckCircleOutlined, CloseCircleOutlined, WarningOutlined,
   SunOutlined, MoonOutlined, LockOutlined, SafetyCertificateOutlined,
   CloudOutlined, RobotOutlined, SettingOutlined, CheckOutlined,
-  StopOutlined, BulbOutlined, PoweroffOutlined, DownloadOutlined
+  StopOutlined, BulbOutlined, PoweroffOutlined, DownloadOutlined,
+  DollarCircleOutlined, LineChartOutlined
 } from '@ant-design/icons';
 
-const API = 'https://chromeextension-be.onrender.com';
+const API = 'https://hvmndoan-production.up.railway.app';
 
 // ── Toast helper ─────────────────────────────────────────────────────────────
 function useToast() {
@@ -771,13 +772,17 @@ function TransactionsTab({ uid, toast }) {
 
       <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
         <div className="admin-card" style={{ flex: 1, marginBottom: 0 }}>
-          <div className="admin-card-title" style={{ marginBottom: 8 }}>💰 Tổng doanh thu</div>
+          <div className="admin-card-title" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <DollarCircleOutlined style={{ color: 'var(--success)' }} /> Tổng doanh thu
+          </div>
           <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--success)' }}>
             {totalRevenue.toLocaleString('vi-VN')} VNĐ
           </div>
         </div>
         <div className="admin-card" style={{ flex: 1, marginBottom: 0 }}>
-          <div className="admin-card-title" style={{ marginBottom: 8 }}>📈 Số lượt giao dịch</div>
+          <div className="admin-card-title" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <LineChartOutlined style={{ color: 'var(--accent-primary)' }} /> Số lượt giao dịch
+          </div>
           <div style={{ fontSize: 28, fontWeight: 700 }}>
             {transactions.length}
           </div>

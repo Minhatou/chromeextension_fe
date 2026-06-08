@@ -21,7 +21,7 @@ import {
   BookOutlined, DeleteOutlined, PlusOutlined,
   QuestionCircleOutlined, CompressOutlined,
   LikeOutlined, LikeFilled, DislikeOutlined, DislikeFilled,
-  BulbOutlined, EditOutlined, SaveOutlined
+  BulbOutlined, EditOutlined, SaveOutlined, ArrowRightOutlined, LogoutOutlined
 } from '@ant-design/icons';
 
 function parseTranslation(data) {
@@ -80,6 +80,7 @@ export default function Dashboard() {
   const [authError, setAuthError] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
   const [resetMsg, setResetMsg] = useState('');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Settings States
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -168,7 +169,7 @@ export default function Dashboard() {
     }
 
     if (session && session.uid) {
-      fetch('https://chromeextension-be.onrender.com/api/user/share_translation', {
+      fetch('https://hvmndoan-production.up.railway.app/api/user/share_translation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid, share_translation: shareTranslation })
@@ -195,7 +196,7 @@ export default function Dashboard() {
     }
 
     if (session && session.uid) {
-      fetch('https://chromeextension-be.onrender.com/api/user/theme', {
+      fetch('https://hvmndoan-production.up.railway.app/api/user/theme', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid, theme: theme })
@@ -214,11 +215,27 @@ export default function Dashboard() {
     });
   }, []);
 
+  // Check URL query parameters for PayOS payment results
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment') === 'success') {
+      alert("🎉 Yêu cầu thanh toán của bạn đang được xử lý! Số dư credit sẽ được cập nhật tự động sau vài giây.");
+      setRefreshTrigger(prev => prev + 1);
+      setTimeout(() => {
+        setRefreshTrigger(prev => prev + 1);
+      }, 3000);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get('payment') === 'cancel') {
+      alert("❌ Giao dịch thanh toán đã bị hủy.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   // Fetch fresh credit balance and data whenever uid changes (signifying login, logout, or account switch)
   useEffect(() => {
     if (session && session.uid && session.idToken) {
       console.log("[Auth] Session UID changed or updated, fetching fresh credit balance...");
-      fetch('https://chromeextension-be.onrender.com/api/auth/verify', {
+      fetch('https://hvmndoan-production.up.railway.app/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken: session.idToken })
@@ -276,7 +293,7 @@ export default function Dashboard() {
       setTotalCredit(0);
       setTokensBalance(0);
     }
-  }, [session?.uid]);
+  }, [session?.uid, refreshTrigger]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -369,7 +386,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (session && session.uid) {
       console.log("[Glossary] Fetching from Firestore for user:", session.uid);
-      fetch('https://chromeextension-be.onrender.com/api/glossary', {
+      fetch('https://hvmndoan-production.up.railway.app/api/glossary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid })
@@ -385,7 +402,7 @@ export default function Dashboard() {
         .catch(err => console.error("[Glossary] Fetch error:", err));
 
       console.log("[History] Fetching from Firestore for user:", session.uid);
-      fetch('https://chromeextension-be.onrender.com/api/history', {
+      fetch('https://hvmndoan-production.up.railway.app/api/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: session.uid })
@@ -570,7 +587,7 @@ export default function Dashboard() {
 
           if (session && session.uid && !isUpdate) {
             console.log("[History] Saving new translation to Firestore for user:", session.uid);
-            fetch('https://chromeextension-be.onrender.com/api/history/add', {
+            fetch('https://hvmndoan-production.up.railway.app/api/history/add', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ uid: session.uid, source: inputText, target: outputText, time: "Vừa xong" })
@@ -628,7 +645,7 @@ export default function Dashboard() {
     if (session && session.uid) {
       console.log("[Glossary] Saving to Firestore for user:", session.uid, newTerm.trim());
       try {
-        const res = await fetch('https://chromeextension-be.onrender.com/api/glossary/add', {
+        const res = await fetch('https://hvmndoan-production.up.railway.app/api/glossary/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid: session.uid, term: newTerm.trim(), meaning: newMeaning.trim(), context: newContext.trim() || "Thêm thủ công" })
@@ -671,7 +688,7 @@ export default function Dashboard() {
     if (session && session.uid) {
       console.log("[Glossary] Deleting from Firestore:", id);
       try {
-        const res = await fetch('https://chromeextension-be.onrender.com/api/glossary/delete', {
+        const res = await fetch('https://hvmndoan-production.up.railway.app/api/glossary/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid: session.uid, id })
@@ -730,7 +747,7 @@ export default function Dashboard() {
     if (session && session.uid) {
       try {
         console.log("[History] Clearing from Firestore for user:", session.uid);
-        await fetch('https://chromeextension-be.onrender.com/api/history/clear', {
+        await fetch('https://hvmndoan-production.up.railway.app/api/history/clear', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid: session.uid })
@@ -878,7 +895,7 @@ export default function Dashboard() {
     setIsExplaining(true);
     setExplainOutput('Đang giải thích...');
     try {
-      const res = await fetch('https://chromeextension-be.onrender.com/api/translate', {
+      const res = await fetch('https://hvmndoan-production.up.railway.app/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, context: '', target_lang: 'explain', glossary: {}, glossary_mode: 'both', user_id: session.uid, model_id: modelId, share_translation: shareTranslation })
@@ -918,7 +935,7 @@ export default function Dashboard() {
     setIsSummarizing(true);
     setSummarizeOutput('Đang tóm tắt...');
     try {
-      const res = await fetch('https://chromeextension-be.onrender.com/api/translate', {
+      const res = await fetch('https://hvmndoan-production.up.railway.app/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, context: '', target_lang: 'summarize', glossary: {}, glossary_mode: 'both', user_id: session.uid, model_id: modelId, share_translation: shareTranslation })
@@ -957,36 +974,64 @@ export default function Dashboard() {
   };
 
   const handleConfirmRecharge = async () => {
-    if (!session || !session.uid || !selectedPackage) return;
-    
-    if (paymentMethod === 'card' && (!creditCardNum || !creditCardExp || !creditCardCvv)) {
-      alert("Vui lòng điền đầy đủ thông tin thẻ tín dụng!");
+    console.log("[Recharge] handleConfirmRecharge triggered");
+    console.log("[Recharge] Session:", session);
+    console.log("[Recharge] Selected package:", selectedPackage);
+
+    if (!session || !session.uid || !selectedPackage) {
+      console.warn("[Recharge] Cannot proceed. Session or selected package is missing.", { session, selectedPackage });
       return;
     }
-
+    
     setIsProcessingPayment(true);
     
-    // Simulate loading/processing payment for 1.8 seconds
-    await new Promise(resolve => setTimeout(resolve, 1800));
+    let amount = 0;
+    if (selectedPackage === 'basic') amount = 50000;
+    else if (selectedPackage === 'standard') amount = 200000;
+    else if (selectedPackage === 'premium') amount = 500000;
+    else if (selectedPackage === 'custom') amount = selectedCustomAmount;
+    
+    console.log("[Recharge] Calculated amount:", amount);
+    
+    if (amount < 1000) {
+      alert("Số tiền nạp tối thiểu là 1.000 VNĐ");
+      setIsProcessingPayment(false);
+      return;
+    }
     
     try {
-      const res = await rechargeTokens(session.uid, selectedPackage, paymentMethod, selectedCustomAmount);
-      if (res.success) {
-        setFreeCredit(res.free_credit);
-        setPurchasedCredit(res.purchased_credit);
-        setTotalCredit(res.total_credit);
-        setTokensBalance(res.total_credit);
-        setRechargeSuccess(true);
-        setIsProcessingPayment(false);
-        // Sync with chrome local storage if extension context
-        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({ authSession: { ...session, free_credit: res.free_credit, purchased_credit: res.purchased_credit, total_credit: res.total_credit } });
-        }
+      const payload = {
+        uid: session.uid,
+        amount: amount,
+        package_id: selectedPackage,
+        return_url: window.location.origin + window.location.pathname + "?payment=success",
+        cancel_url: window.location.origin + window.location.pathname + "?payment=cancel"
+      };
+      console.log("[Recharge] Sending payload to backend:", payload);
+      
+      const response = await fetch('https://hvmndoan-production.up.railway.app/api/payment/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      console.log("[Recharge] Response status code:", response.status);
+      const res = await response.json();
+      console.log("[Recharge] Parsed backend response:", res);
+      
+      if (res.success && res.checkoutUrl) {
+        console.log("[Recharge] Success! Redirecting user to PayOS portal:", res.checkoutUrl);
+        setIsUserDropdownOpen(false);
+        setIsRechargeOpen(false);
+        // Redirect to PayOS payment portal
+        window.location.href = res.checkoutUrl;
       } else {
-        alert("Lỗi khi nạp: " + (res.error || "Không rõ nguyên nhân"));
+        console.error("[Recharge] Backend returned failure:", res);
+        alert("Lỗi khi tạo giao dịch PayOS: " + (res.error || "Không rõ nguyên nhân"));
         setIsProcessingPayment(false);
       }
     } catch (err) {
+      console.error("[Recharge] Exception occurred during checkout request:", err);
       alert("Lỗi khi kết nối đến máy chủ thanh toán: " + err.message);
       setIsProcessingPayment(false);
     }
@@ -1024,7 +1069,7 @@ export default function Dashboard() {
     if (session && session.uid) {
       console.log("[Glossary] Saving from translate to Firestore for user:", session.uid);
       try {
-        const res = await fetch('https://chromeextension-be.onrender.com/api/glossary/add', {
+        const res = await fetch('https://hvmndoan-production.up.railway.app/api/glossary/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uid: session.uid, term: inputText, meaning: outputText, context: "Từ bản dịch" })
@@ -1212,7 +1257,7 @@ export default function Dashboard() {
       }
 
       console.log('[OCR] Sending image to backend for processing...');
-      const response = await fetch('https://chromeextension-be.onrender.com/api/ocr', {
+      const response = await fetch('https://hvmndoan-production.up.railway.app/api/ocr', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1262,7 +1307,7 @@ export default function Dashboard() {
         formData.append('file', file);
 
         console.log('[Doc] Uploading file to backend for text extraction...');
-        const response = await fetch('https://chromeextension-be.onrender.com/api/document/extract', {
+        const response = await fetch('https://hvmndoan-production.up.railway.app/api/document/extract', {
           method: 'POST',
           body: formData
         });
@@ -1310,7 +1355,7 @@ export default function Dashboard() {
             {theme === 'light' ? <MoonOutlined /> : <SunOutlined />}
           </button>
           <button className="gt-icon-btn" title="Cài đặt" onClick={() => setIsSettingsOpen(true)}><SettingOutlined /></button>
- 
+
           {session?.role === 'admin' && (
             <button
               title="Trang quản trị"
@@ -1321,16 +1366,19 @@ export default function Dashboard() {
                 window.open(url, '_blank');
               }}
               style={{
-                background: '#18181b', color: '#fff', border: 'none',
+                background: 'var(--btn-bg)', color: 'var(--text-primary)', border: '1px solid var(--card-border)',
                 padding: '6px 12px', borderRadius: '8px',
                 fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '5px'
+                display: 'flex', alignItems: 'center', gap: '5px',
+                transition: 'all 0.2s ease'
               }}
+              onMouseOver={e => e.currentTarget.style.background = 'var(--btn-hover-bg)'}
+              onMouseOut={e => e.currentTarget.style.background = 'var(--btn-bg)'}
             >
-              ⚙ Admin
+              <SettingOutlined /> Admin
             </button>
           )}
- 
+
           {session ? (
             <div style={{ position: 'relative' }}>
               <div 
@@ -1349,31 +1397,33 @@ export default function Dashboard() {
                     onClick={() => setIsUserDropdownOpen(false)} 
                   />
                   <div style={{
-                    position: 'absolute', top: '46px', right: '0', background: '#18181b',
-                    border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '16px',
-                    width: '260px', zIndex: 999, boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+                    position: 'absolute', top: '48px', right: '0', 
+                    background: 'var(--card-bg)',
+                    backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+                    border: '1px solid var(--card-border)', borderRadius: '12px', padding: '16px',
+                    width: '260px', zIndex: 999, boxShadow: theme === 'dark' ? '0 10px 40px rgba(0,0,0,0.5)' : '0 10px 40px rgba(0,0,0,0.08)',
                     display: 'flex', flexDirection: 'column', gap: '12px',
                     animation: 'it-fade-in 0.15s ease-out', fontFamily: "'Inter', sans-serif"
                   }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '10px' }}>
-                      <span style={{ fontSize: '11px', color: '#888', fontWeight: 500 }}>Tài khoản</span>
-                      <strong style={{ fontSize: '13px', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 500 }}>Tài khoản</span>
+                      <strong style={{ fontSize: '13px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
                         {session.email}
                       </strong>
                     </div>
 
                     {/* Stark & premium VND credit details */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#aaa', fontWeight: 500 }}>
-                        <span>Credit miễn phí (ngày)</span>
-                        <strong style={{ color: '#fff' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        <span>Credit miễn phí</span>
+                        <strong style={{ color: 'var(--text-primary)' }}>
                           {totalCredit === -1 ? 'Vô hạn' : `${freeCredit.toLocaleString('vi-VN')}đ / 100k`}
                         </strong>
                       </div>
                       {totalCredit !== -1 && (
                         <div style={{
-                          width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px',
-                          overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)'
+                          width: '100%', height: '5px', background: theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', borderRadius: '3px',
+                          overflow: 'hidden', border: theme === 'dark' ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(0,0,0,0.03)'
                         }}>
                           <div style={{
                             width: `${Math.min(100, (freeCredit / 100000.0) * 100)}%`,
@@ -1384,16 +1434,16 @@ export default function Dashboard() {
                         </div>
                       )}
                       
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#aaa', fontWeight: 500, marginTop: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 500, marginTop: '2px' }}>
                         <span>Credit đã mua</span>
-                        <strong style={{ color: '#60a5fa' }}>
+                        <strong style={{ color: 'var(--accent-primary)' }}>
                           {totalCredit === -1 ? 'Vô hạn' : `${purchasedCredit.toLocaleString('vi-VN')}đ`}
                         </strong>
                       </div>
                       
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#fff', fontWeight: 700, marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-primary)', fontWeight: 700, marginTop: '6px', borderTop: '1px solid var(--card-border)', paddingTop: '8px' }}>
                         <span>Tổng số dư</span>
-                        <span>
+                        <span style={{ color: 'var(--accent-primary)' }}>
                           {totalCredit === -1 ? 'Vô hạn' : `${totalCredit.toLocaleString('vi-VN')}đ`}
                         </span>
                       </div>
@@ -1412,14 +1462,17 @@ export default function Dashboard() {
                           }, 100);
                         }}
                         style={{
-                          width: '100%', padding: '10px', background: '#ffffff', color: '#000000',
-                          border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+                          width: '100%', padding: '10px', background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-text)',
+                          border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 700,
                           cursor: 'pointer', transition: 'all 0.2s ease', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center', gap: '6px'
+                          alignItems: 'center', justifyContent: 'center', gap: '6px',
+                          boxShadow: '0 4px 12px var(--btn-primary-shadow)'
                         }}
+                        onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
                         className="dropdown-recharge-btn"
                       >
-                        💎 Nạp thêm Token
+                        <ThunderboltFilled style={{ fontSize: '12px' }} /> Nạp thêm Credit
                       </button>
                     )}
 
@@ -1429,12 +1482,15 @@ export default function Dashboard() {
                         handleLogout();
                       }}
                       style={{
-                        width: '100%', padding: '8px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444',
-                        border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', fontSize: '12px',
-                        fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s ease'
+                        width: '100%', padding: '8px', background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: '8px', fontSize: '12px',
+                        fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s ease',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
                       }}
+                      onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)'; }}
                     >
-                      🚪 Đăng xuất
+                      <LogoutOutlined style={{ fontSize: '12px' }} /> Đăng xuất
                     </button>
                   </div>
                 </>
@@ -1443,7 +1499,13 @@ export default function Dashboard() {
           ) : (
             <button
               className="gt-icon-btn"
-              style={{ width: 'auto', padding: '0 12px', fontSize: '13px', fontWeight: 600, background: '#18181b', color: '#fff' }}
+              style={{
+                width: 'auto', padding: '0 12px', fontSize: '13px', fontWeight: 600,
+                background: 'var(--btn-bg)', color: 'var(--text-primary)', border: '1px solid var(--card-border)',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={e => e.currentTarget.style.background = 'var(--btn-hover-bg)'}
+              onMouseOut={e => e.currentTarget.style.background = 'var(--btn-bg)'}
               onClick={() => setIsAuthModalOpen(true)}
             >
               Đăng nhập
@@ -1742,9 +1804,9 @@ export default function Dashboard() {
             <div className="vocab-list">
               {savedVocabulary.map(item => (
                 <div key={item.id} className="vocab-item">
-                  <div className="vocab-term-chip">
+                  <div className="vocab-term-chip" style={{ display: 'inline-flex', alignItems: 'center' }}>
                     <span className="term">{item.term}</span>
-                    <span className="arrow">→</span>
+                    <ArrowRightOutlined className="arrow" style={{ margin: '0 8px', color: 'var(--text-muted)', fontSize: '12px' }} />
                     <span className="meaning">{item.meaning}</span>
                   </div>
                   <p className="vocab-context">"{item.context}"</p>
@@ -1881,23 +1943,33 @@ export default function Dashboard() {
                 </div>
 
                 {/* Custom Package */}
-                <div className="pricing-card" style={{ cursor: 'default', minHeight: '340px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }} onClick={(e) => e.stopPropagation()}>
-                  <div>
-                    <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: 'var(--text-primary)' }}>Gói Tự Chọn</h4>
-                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '8px 0 12px 0', lineHeight: 1.4 }}>
-                      Nhập số tiền bạn muốn nạp vào tài khoản (tối thiểu là 1.000 VNĐ).
+                <div className="pricing-card" style={{ 
+                  cursor: 'default', 
+                  gridColumn: '1 / -1', 
+                  display: 'flex', 
+                  flexDirection: 'row', 
+                  flexWrap: 'wrap',
+                  alignItems: 'center', 
+                  justifyContent: 'space-between',
+                  gap: '20px',
+                  padding: '24px'
+                }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ flex: '2', minWidth: '260px', textAlign: 'left' }}>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', color: 'var(--text-primary)', fontWeight: 700 }}>Gói Tự Chọn</h4>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+                      Nhập số tiền bạn muốn nạp vào tài khoản (tối thiểu là 1.000 VNĐ). Hệ thống sẽ tạo mã QR tương ứng để giao dịch.
                     </p>
-                    <div style={{ margin: '10px 0' }} onClick={(e) => e.stopPropagation()}>
+                    <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '300px' }}>
                       <input 
                         type="number" 
                         min="1000"
-                        placeholder="Số tiền (VNĐ)..."
+                        placeholder="Nhập số tiền (VNĐ)..."
                         value={customRechargeAmount || ''}
                         onChange={(e) => setCustomRechargeAmount(parseInt(e.target.value) || 0)}
                         className="gt-input"
                         style={{
                           width: '100%',
-                          padding: '10px',
+                          padding: '10px 14px',
                           borderRadius: '8px',
                           border: '1px solid var(--border-color)',
                           background: 'var(--bg-secondary)',
@@ -1908,13 +1980,22 @@ export default function Dashboard() {
                       />
                     </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '12px' }}>
-                      {(customRechargeAmount || 0).toLocaleString('vi-VN')} VNĐ
+                  <div style={{ 
+                    flex: '1', 
+                    minWidth: '180px', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'flex-end', 
+                    justifyContent: 'center',
+                    gap: '10px'
+                  }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Số tiền thanh toán:</div>
+                    <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--accent-primary)', lineHeight: '1.2' }}>
+                      {(customRechargeAmount || 0).toLocaleString('vi-VN')} <span style={{ fontSize: '14px', fontWeight: 500 }}>VNĐ</span>
                     </div>
                     <button 
                       className="gt-btn-primary" 
-                      style={{ width: '100%', padding: '10px' }}
+                      style={{ width: '100%', padding: '12px', fontWeight: 700, borderRadius: '8px' }}
                       onClick={() => {
                         if (!customRechargeAmount || customRechargeAmount < 1000) {
                           alert("Số tiền nạp tối thiểu là 1.000 VNĐ!");
@@ -2276,68 +2357,23 @@ export default function Dashboard() {
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gói dịch vụ chọn mua:</div>
                     <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>
-                        {selectedPackage === 'custom' ? `Gói Tự Chọn (+${selectedCustomAmount.toLocaleString('vi-VN')} VNĐ)` : selectedPackage === 'basic' ? 'Gói Cơ bản (+50.000 VNĐ)' : selectedPackage === 'standard' ? 'Gói Tiêu chuẩn (+200.000 VNĐ)' : 'Gói Cao cấp (+500.000 VNĐ)'}
+                        {selectedPackage === 'custom' ? `Gói Tự Chọn` : selectedPackage === 'basic' ? 'Gói Cơ bản' : selectedPackage === 'standard' ? 'Gói Tiêu chuẩn' : 'Gói Cao cấp'}
                       </span>
                       <strong style={{ color: 'var(--accent-primary)', fontSize: '17px' }}>
-                        {selectedPackage === 'custom' ? `${selectedCustomAmount.toLocaleString('vi-VN')}đ` : selectedPackage === 'basic' ? '50.000đ' : selectedPackage === 'standard' ? '200.000đ' : '500.000đ'}
+                        {selectedPackage === 'custom' ? `${selectedCustomAmount.toLocaleString('vi-VN')} VNĐ` : selectedPackage === 'basic' ? '50.000 VNĐ' : selectedPackage === 'standard' ? '200.000 VNĐ' : '500.000 VNĐ'}
                       </strong>
                     </div>
                   </div>
 
-                  {/* Dynamic VietQR Code */}
-                  {(() => {
-                    const getPackageAmount = (pkg) => {
-                      if (pkg === 'basic') return 50000;
-                      if (pkg === 'standard') return 200000;
-                      if (pkg === 'premium') return 500000;
-                      if (pkg === 'custom') return selectedCustomAmount;
-                      return 0;
-                    };
-                    const amount = getPackageAmount(selectedPackage);
-                    const memo = `NAP ${selectedPackage?.toUpperCase() || ''} ${session?.uid ? session.uid.substring(0, 8).toUpperCase() : 'ANON'}`;
-                    const bankBin = '970422'; // MB Bank BIN from 970422
-                    const bankAccount = '0916074273';
-                    const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bankAccount}-compact2.jpg?amount=${amount}&addInfo=${encodeURIComponent(memo)}`;
-
-                    return (
-                      <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                        <div style={{
-                          background: '#ffffff', padding: '10px', borderRadius: '8px', display: 'inline-block',
-                          boxShadow: '0 4px 20px rgba(0,0,0,0.15)', marginBottom: '16px',
-                          border: '1px solid var(--card-border)'
-                        }}>
-                          <img 
-                            src={qrUrl} 
-                            alt="Mã VietQR Chuyển khoản" 
-                            style={{ width: '220px', height: 'auto', borderRadius: '6px', display: 'block' }} 
-                          />
-                        </div>
-                        <div style={{
-                          background: 'rgba(255, 255, 255, 0.04)', padding: '10px 14px', borderRadius: '8px',
-                          border: '1px dashed rgba(255, 255, 255, 0.1)', marginBottom: '16px',
-                          display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px',
-                          textAlign: 'left'
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ color: 'var(--text-secondary)' }}>Số tiền:</span>
-                            <strong style={{ color: '#10b981' }}>{amount.toLocaleString('vi-VN')} VNĐ</strong>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ color: 'var(--text-secondary)' }}>Nội dung chuyển khoản:</span>
-                            <strong style={{ color: 'var(--accent-primary)', fontSize: '14px', background: 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '4px' }}>
-                              {memo}
-                            </strong>
-                          </div>
-                        </div>
-                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
-                          Quét mã QR bằng ứng dụng ngân hàng của bạn để thực hiện chuyển khoản tự động.
-                        </p>
-                        <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '0 0 15px 0', lineHeight: 1.4 }}>
-                          Sau khi chuyển tiền thành công, vui lòng nhấn nút <strong>Xác nhận Thanh toán</strong> bên dưới để hệ thống đối soát giao dịch và tự động cộng Credit mua.
-                        </p>
-                      </div>
-                    );
-                  })()}
+                  <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '12px' }}>💳</div>
+                    <p style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600, margin: '0 0 8px 0' }}>
+                      Thanh toán tự động qua cổng PayOS (VietQR)
+                    </p>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 15px 0' }}>
+                      Bạn sẽ được chuyển hướng sang cổng thanh toán của PayOS để thực hiện quét mã VietQR tự động. Sau khi hoàn thành, số dư credit sẽ được tự động cộng vào tài khoản của bạn.
+                    </p>
+                  </div>
 
                   <div style={{ marginTop: '28px', display: 'flex', gap: '10px' }}>
                     <button
@@ -2354,7 +2390,7 @@ export default function Dashboard() {
                       disabled={isProcessingPayment}
                       onClick={handleConfirmRecharge}
                     >
-                      {isProcessingPayment ? '⌛ Đang xác thực...' : '✓ Xác nhận'}
+                      {isProcessingPayment ? '⌛ Đang kết nối...' : '✓ Thanh toán ngay'}
                     </button>
                   </div>
                 </div>

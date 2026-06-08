@@ -2,7 +2,7 @@ import { LlmInference, FilesetResolver } from '@mediapipe/tasks-genai';
 
 let llmInference = null;
 let useApi = false;
-const API_URL = 'https://chromeextension-be.onrender.com/api/translate';
+const API_URL = 'https://hvmndoan-production.up.railway.app/api/translate';
 
 console.log('[Sandbox] Sandbox initialized.');
 
