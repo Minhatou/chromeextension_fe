@@ -174,7 +174,12 @@ function HistoryTab({ uid, toast }) {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const exportJson = () => {
-    const data = history.map(h => ({ ENG: h.source_text || '', VIE: h.translated_text || '' }));
+    const data = {};
+    history.forEach(h => {
+      if (h.source_text) {
+        data[h.source_text] = h.translated_text || '';
+      }
+    });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -506,6 +511,7 @@ function ModelsTab({ uid, toast }) {
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
   const [form, setForm] = useState({ model_id: '', name: '', path: '', input_price_1m: 5000, output_price_1m: 15000 });
   const [saving, setSaving] = useState(false);
 
@@ -520,8 +526,26 @@ function ModelsTab({ uid, toast }) {
   useEffect(() => { fetchModels(); }, [fetchModels]);
 
   const openAdd = () => {
+    setEditTarget(null);
     setForm({ model_id: '', name: '', path: '', input_price_1m: 5000, output_price_1m: 15000 });
     setShowAdd(true);
+  };
+
+  const openEdit = (model) => {
+    setEditTarget(model);
+    setForm({
+      model_id: model.model_id,
+      name: model.name,
+      path: model.path,
+      input_price_1m: model.input_price_1m ?? 5000,
+      output_price_1m: model.output_price_1m ?? 15000
+    });
+    setShowAdd(false);
+  };
+
+  const closeModal = () => {
+    setEditTarget(null);
+    setShowAdd(false);
   };
 
   const deleteModel = async (modelId) => {
@@ -545,12 +569,14 @@ function ModelsTab({ uid, toast }) {
     setSaving(false);
     if (res.success) {
       fetchModels();
-      toast('Đã lưu model thành công');
-      setShowAdd(false);
+      toast(editTarget ? 'Đã cập nhật model thành công' : 'Đã lưu model thành công');
+      closeModal();
     } else {
       toast(res.error || 'Lưu thất bại', 'error');
     }
   };
+
+  const isModalOpen = showAdd || editTarget !== null;
 
   return (
     <div>
@@ -598,9 +624,14 @@ function ModelsTab({ uid, toast }) {
                   <td>{m.input_price_1m?.toLocaleString('vi-VN')} VNĐ</td>
                   <td>{m.output_price_1m?.toLocaleString('vi-VN')} VNĐ</td>
                   <td>
-                    <button className="btn btn-danger btn-sm" onClick={() => deleteModel(m.model_id)}>
-                      <DeleteOutlined /> Xoá
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openEdit(m)}>
+                        <EditOutlined /> Sửa
+                      </button>
+                      <button className="btn btn-danger btn-sm" onClick={() => deleteModel(m.model_id)}>
+                        <DeleteOutlined /> Xoá
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -609,11 +640,11 @@ function ModelsTab({ uid, toast }) {
         )}
       </div>
 
-      {showAdd && (
-        <div className="admin-modal-overlay" onClick={() => setShowAdd(false)}>
+      {isModalOpen && (
+        <div className="admin-modal-overlay" onClick={closeModal}>
           <div className="admin-modal" onClick={e => e.stopPropagation()}>
             <div className="admin-modal-title">
-              <PlusOutlined /> Thêm mô hình AI mới
+              {editTarget ? <><EditOutlined /> Chỉnh sửa mô hình AI</> : <><PlusOutlined /> Thêm mô hình AI mới</>}
             </div>
             <div className="admin-form">
               <div className="admin-form-group">
@@ -622,6 +653,7 @@ function ModelsTab({ uid, toast }) {
                   className="admin-input"
                   placeholder="model_id"
                   value={form.model_id}
+                  disabled={editTarget !== null}
                   onChange={e => setForm(p => ({ ...p, model_id: e.target.value }))}
                 />
               </div>
@@ -663,11 +695,11 @@ function ModelsTab({ uid, toast }) {
               </div>
             </div>
             <div className="admin-modal-actions">
-              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>
+              <button className="btn btn-ghost" onClick={closeModal}>
                 <CloseOutlined /> Huỷ
               </button>
               <button className="btn btn-primary" onClick={save} disabled={saving}>
-                {saving ? <span className="admin-spinner" /> : <CheckOutlined />} Thêm
+                {saving ? <span className="admin-spinner" /> : <CheckOutlined />} {editTarget ? 'Lưu thay đổi' : 'Thêm'}
               </button>
             </div>
           </div>
@@ -920,21 +952,41 @@ function StatusTab() {
                   </td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Port 5000</td>
                 </tr>
-                <tr>
-                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <RobotOutlined style={{ color: 'var(--text-secondary)' }} />
-                    LLM (Qwen2 / LoRA)
-                  </td>
-                  <td>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: status?.model_loaded ? 'var(--success)' : 'var(--warning)', fontWeight: 600 }}>
-                      <StatusIcon ok={status?.model_loaded} warn={!status?.model_loaded} />
-                      {status?.model_loaded ? 'Loaded' : 'Not loaded'}
-                    </span>
-                  </td>
-                  <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                    {status?.model_loaded ? 'Inference sẵn sàng' : 'Gọi load_model() để nạp'}
-                  </td>
-                </tr>
+                {status?.models && status.models.length > 0 ? (
+                  status.models.map(m => (
+                    <tr key={m.model_id}>
+                      <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <RobotOutlined style={{ color: 'var(--text-secondary)' }} />
+                        Mô hình: {m.name}
+                      </td>
+                      <td>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: m.loaded ? 'var(--success)' : 'var(--warning)', fontWeight: 600 }}>
+                          <StatusIcon ok={m.loaded} warn={!m.loaded} />
+                          {m.loaded ? 'Loaded' : 'Not loaded'}
+                        </span>
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                        ID: <span style={{ fontFamily: 'monospace' }}>{m.model_id}</span> {m.loaded ? '— Sẵn sàng dịch thuật' : '— Chưa tải vào RAM'}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <RobotOutlined style={{ color: 'var(--text-secondary)' }} />
+                      LLM (Mặc định)
+                    </td>
+                    <td>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: status?.model_loaded ? 'var(--success)' : 'var(--warning)', fontWeight: 600 }}>
+                        <StatusIcon ok={status?.model_loaded} warn={!status?.model_loaded} />
+                        {status?.model_loaded ? 'Loaded' : 'Not loaded'}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                      {status?.model_loaded ? 'Sẵn sàng dịch thuật' : 'Chưa tải vào RAM'}
+                    </td>
+                  </tr>
+                )}
                 <tr>
                   <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <CloudOutlined style={{ color: 'var(--text-secondary)' }} />

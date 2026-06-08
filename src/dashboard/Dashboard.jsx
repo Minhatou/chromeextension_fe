@@ -620,6 +620,27 @@ export default function Dashboard() {
     return () => clearTimeout(timer);
   }, [summarizeInput, currentMode]);
 
+  // Auto-trigger translate when in standard modes and user stops typing (1.5s debounce)
+  useEffect(() => {
+    if (currentMode === 'explain' || currentMode === 'summarize' || !inputText.trim()) return;
+    const timer = setTimeout(() => {
+      handleTranslate(inputText);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [inputText, currentMode]);
+
+  // Reset all inputs and outputs when switching modes
+  useEffect(() => {
+    setInputText('');
+    setOutputText('');
+    setExplainInput('');
+    setExplainOutput('');
+    setSummarizeInput('');
+    setSummarizeOutput('');
+    setIsFromCache(false);
+    setCurrentRating(null);
+  }, [currentMode]);
+
 
 
   const addTerm = () => {
@@ -820,8 +841,17 @@ export default function Dashboard() {
     reader.readAsText(file);
   };
 
-  const handleTranslate = async (text) => {
-    console.log('[Dashboard] handleTranslate called with:', text);
+  const handleInputChange = (text) => {
+    setInputText(text);
+    setIsFromCache(false);
+    setCurrentRating(null);
+    if (text.trim() === '') {
+      setOutputText('');
+    }
+  };
+
+  const handleTranslate = async (text, isReTranslate = false) => {
+    console.log('[Dashboard] handleTranslate called with:', text, 'isReTranslate:', isReTranslate);
     setInputText(text);
     setIsFromCache(false);
     setCurrentRating(null);
@@ -837,7 +867,7 @@ export default function Dashboard() {
     }
 
     try {
-      setOutputText('Đang dịch...');
+      setOutputText(isReTranslate ? 'Đang dịch lại...' : 'Đang dịch...');
 
       const glossaryDict = {};
       const matchedTerms = [];
@@ -1129,7 +1159,7 @@ export default function Dashboard() {
       if (rating === 'dislike') {
         console.log('[Dashboard] Disliked translation. Re-translating immediately...');
         setCurrentRating(null);
-        handleTranslate(inputText);
+        handleTranslate(inputText, true);
       }
     } catch (err) {
       console.error("Failed to rate translation", err);
@@ -1677,7 +1707,7 @@ export default function Dashboard() {
                 <textarea
                   placeholder={currentMode === 'image' ? "Chữ trích xuất từ ảnh sẽ hiện ở đây" : (currentMode === 'doc' ? "Nội dung tài liệu sẽ hiện ở đây" : "Nhập văn bản")}
                   value={inputText}
-                  onChange={(e) => handleTranslate(e.target.value)}
+                  onChange={(e) => handleInputChange(e.target.value)}
                   disabled={isProcessingOCR || isProcessingDoc}
                 ></textarea>
                 <div className="gt-box-footer">
