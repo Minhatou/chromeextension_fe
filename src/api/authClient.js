@@ -6,7 +6,7 @@
  * Firebase Console → Project Settings → General → Web API Key
  */
 
-const FLASK_BASE_URL   = 'https://hvmndoan-production.up.railway.app';
+const FLASK_BASE_URL = 'https://hvmndoan-production.up.railway.app';
 
 // ── Local storage helpers ─────────────────────────────────────────────────────
 
@@ -118,11 +118,11 @@ export async function loginWithGoogle() {
     const height = 650;
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
-    
+
     const popupUrl = FLASK_BASE_URL.replace('127.0.0.1', 'localhost');
     const popup = window.open(
       `${popupUrl}/auth/google`,
-      'Google Sign-In - IT Translator',
+      'Google Sign-In - DevBridge',
       `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,status=1`
     );
 
@@ -135,7 +135,7 @@ export async function loginWithGoogle() {
       if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS') {
         window.removeEventListener('message', messageListener);
         const { idToken, refreshToken } = event.data;
-        
+
         try {
           const flaskRes = await fetch(`${FLASK_BASE_URL}/api/auth/google`, {
             method: 'POST',

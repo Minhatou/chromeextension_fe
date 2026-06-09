@@ -7,7 +7,6 @@ import {
   deleteSavedTranslation,
   updateSavedTranslationNote,
   rateTranslation,
-  contributeTranslation,
   rechargeTokens,
   checkStatus
 } from '../api/translationClient';
@@ -138,9 +137,7 @@ export default function Dashboard() {
   const [currentRating, setCurrentRating] = useState(null);
   const [isSaveTransOpen, setIsSaveTransOpen] = useState(false);
   const [saveTransNote, setSaveTransNote] = useState('');
-  const [isContributeOpen, setIsContributeOpen] = useState(false);
-  const [suggestedTrans, setSuggestedTrans] = useState('');
-  const [contribSuccessMsg, setContribSuccessMsg] = useState('');
+
 
   const [tokensBalance, setTokensBalance] = useState(1000000);
   const [freeCredit, setFreeCredit] = useState(100000.0);
@@ -1293,36 +1290,6 @@ export default function Dashboard() {
     }
   };
 
-  const handleOpenContribute = () => {
-    if (!inputText.trim() || !outputText.trim() || outputText === 'Đang dịch...') {
-      showAlert("Chưa có bản dịch hợp lệ để đóng góp!");
-      return;
-    }
-    setSuggestedTrans(outputText);
-    setContribSuccessMsg('');
-    setIsContributeOpen(true);
-  };
-
-  const handleContributeSubmit = async () => {
-    if (!suggestedTrans.trim()) {
-      showAlert("Vui lòng nhập bản dịch đóng góp!");
-      return;
-    }
-    try {
-      const uid = session?.uid || 'anonymous';
-      const email = session?.email || 'anonymous';
-      const res = await contributeTranslation(uid, email, inputText, outputText, suggestedTrans);
-      if (res.success) {
-        setContribSuccessMsg("Cảm ơn bạn đã đóng góp! Bản dịch đã được gửi lên hệ thống để xem xét.");
-        setTimeout(() => {
-          setIsContributeOpen(false);
-        }, 2000);
-      }
-    } catch (err) {
-      console.error("Failed to contribute translation", err);
-      showAlert("Không thể gửi đóng góp: " + err.message);
-    }
-  };
 
   const handleSwapLanguages = () => {
     setSourceLang(prev => prev === 'Anh' ? 'Việt' : 'Anh');
@@ -1838,10 +1805,7 @@ export default function Dashboard() {
                     <button className="gt-icon-btn" title="Sao chép" onClick={() => outputText && navigator.clipboard.writeText(outputText)}><CopyOutlined /></button>
                     <button className="gt-icon-btn" title="Lưu sổ tay thuật ngữ" onClick={handleSaveToGlossary}><StarOutlined /></button>
                     {outputText && outputText !== 'Đang dịch...' && !outputText.startsWith('Lỗi khi dịch') && session && (
-                      <>
-                        <button className="gt-icon-btn" title="Lưu Sổ tay bản dịch/ghi chú" onClick={handleOpenSaveTrans}><SaveOutlined /></button>
-                        <button className="gt-icon-btn" title="Đóng góp cải thiện bản dịch" onClick={handleOpenContribute}><BulbOutlined /></button>
-                      </>
+                      <button className="gt-icon-btn" title="Lưu Sổ tay bản dịch/ghi chú" onClick={handleOpenSaveTrans}><SaveOutlined /></button>
                     )}
                     <button className="gt-icon-btn" title="Chia sẻ"><LinkOutlined /></button>
                   </div>
@@ -2399,46 +2363,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Contribute Translation Modal */}
-      {isContributeOpen && (
-        <div className="gt-modal-overlay" onClick={() => setIsContributeOpen(false)}>
-          <div className="gt-modal-content glass animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <div className="gt-modal-header">
-              <h2>💡 Đóng góp bản dịch tốt hơn</h2>
-              <button className="gt-modal-close" onClick={() => setIsContributeOpen(false)}>×</button>
-            </div>
-
-            <div className="gt-modal-body">
-              <div className="form-group" style={{ marginBottom: '12px' }}>
-                <label className="form-label">Văn bản gốc</label>
-                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{inputText}</div>
-              </div>
-              <div className="form-group" style={{ marginBottom: '12px' }}>
-                <label className="form-label">Bản dịch hiện tại của AI</label>
-                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', fontSize: '13px', textDecoration: 'line-through', opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis' }}>{outputText}</div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Bản dịch đề xuất của bạn</label>
-                <textarea
-                  className="gt-input"
-                  style={{ width: '100%', minHeight: '80px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}
-                  placeholder="Nhập bản dịch chuẩn xác hơn tại đây..."
-                  value={suggestedTrans}
-                  onChange={(e) => setSuggestedTrans(e.target.value)}
-                />
-              </div>
-              {contribSuccessMsg && (
-                <div style={{ marginTop: '12px', color: '#10b981', fontSize: '13px', fontWeight: 600 }}>{contribSuccessMsg}</div>
-              )}
-            </div>
-
-            <div className="gt-modal-footer">
-              <button className="gt-btn-outline" style={{ marginRight: '10px' }} onClick={() => setIsContributeOpen(false)}>Hủy</button>
-              <button className="gt-btn-primary" onClick={handleContributeSubmit}>Gửi đóng góp</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Mock Payment / Recharge Modal */}
       {isRechargeOpen && (

@@ -26,9 +26,9 @@ function parseTranslation(data) {
       }
     }
   }
-  
+
   if (!text) return '';
-  
+
   // Clean up <think> reasoning tags
   if (text.includes('<think>') && text.includes('</think>')) {
     text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
@@ -127,20 +127,7 @@ export async function rateTranslation(uid, source, rating) {
 }
 
 /**
- * Contribute a translation.
- */
-export async function contributeTranslation(uid, email, sourceText, originalTranslation, suggestedTranslation) {
-  const response = await fetch(`${BASE_URL}/api/translate/contribute`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uid, email, source_text: sourceText, original_translation: originalTranslation, suggested_translation: suggestedTranslation }),
-  })
-  if (!response.ok) throw new Error('Failed to submit contribution')
-  return response.json()
-}
-
-/**
- * Recharge tokens (Mock payment recharge).
+ * Recharge credits.
  */
 export async function rechargeTokens(uid, packageId, paymentMethod = 'qr', amount = 0) {
   const response = await fetch(`${BASE_URL}/api/user/recharge`, {
