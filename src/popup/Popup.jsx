@@ -27,9 +27,6 @@ export default function Popup() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [resetMsg, setResetMsg] = useState('')
 
-  // Inference Mode (API vs Local)
-  const [inferenceMode, setInferenceMode] = useState('api')
-
   // Check backend status
   useEffect(() => {
     checkStatus()
@@ -68,14 +65,6 @@ export default function Popup() {
           .catch(() => { });
       }
     })
-
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['inferenceMode'], (res) => {
-        if (res.inferenceMode) setInferenceMode(res.inferenceMode)
-      })
-    } else {
-      setInferenceMode(localStorage.getItem('inferenceMode') || 'api')
-    }
   }, [])
 
   const online = status && !error
@@ -137,16 +126,6 @@ export default function Popup() {
   function handleLogout() {
     logout()
     setSession(null)
-  }
-
-  function toggleInferenceMode() {
-    const newMode = inferenceMode === 'api' ? 'local' : 'api'
-    setInferenceMode(newMode)
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.set({ inferenceMode: newMode })
-    } else {
-      localStorage.setItem('inferenceMode', newMode)
-    }
   }
 
   return (
