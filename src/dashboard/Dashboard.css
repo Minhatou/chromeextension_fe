@@ -1106,3 +1106,96 @@ input:checked + .slider:before {
   box-shadow: 0 4px 12px rgba(96, 165, 250, 0.08);
 }
 
+/* Previews inside the input box */
+.gt-preview-container {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.gt-image-preview-wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  max-width: 100%;
+  background: var(--bg-color);
+  padding: 4px;
+}
+
+.gt-image-preview {
+  max-height: 180px;
+  max-width: 100%;
+  display: block;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.gt-doc-preview-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 40px 10px 14px;
+  background: var(--item-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.gt-doc-preview-wrapper .doc-icon {
+  color: var(--accent-primary);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+}
+
+.gt-doc-preview-wrapper .doc-name {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gt-preview-remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.6);
+  color: #ffffff;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.gt-preview-remove-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+  transform: scale(1.1);
+}
+
+.gt-doc-preview-wrapper .gt-preview-remove-btn {
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+}
+
+.gt-doc-preview-wrapper .gt-preview-remove-btn:hover {
+  transform: translateY(-50%) scale(1.1);
+}
+

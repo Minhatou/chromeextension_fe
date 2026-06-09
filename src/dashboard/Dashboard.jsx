@@ -41,9 +41,9 @@ function parseTranslation(data) {
       }
     }
   }
-  
+
   if (!text) return '';
-  
+
   // Clean up <think> reasoning tags
   if (text.includes('<think>') && text.includes('</think>')) {
     text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
@@ -85,6 +85,8 @@ export default function Dashboard() {
   const [activeFooterTab, setActiveFooterTab] = useState(null); // null | 'history' | 'saved'
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [isProcessingDoc, setIsProcessingDoc] = useState(false);
+  const [selectedImageSrc, setSelectedImageSrc] = useState(null);
+  const [selectedDocName, setSelectedDocName] = useState(null);
 
   // Explain & Summarize States
   const [explainInput, setExplainInput] = useState('');
@@ -145,9 +147,9 @@ export default function Dashboard() {
   const [totalCredit, setTotalCredit] = useState(100000.0);
   const [modelId, setModelId] = useState(() => {
     try {
-      return localStorage.getItem('modelId') || 'qwen3';
+      return localStorage.getItem('modelId') || 'Qwen2.5';
     } catch {
-      return 'qwen3';
+      return 'Qwen2.5';
     }
   });
   const [availableModels, setAvailableModels] = useState([
@@ -696,6 +698,8 @@ export default function Dashboard() {
     setSummarizeOutput('');
     setIsFromCache(false);
     setCurrentRating(null);
+    setSelectedImageSrc(null);
+    setSelectedDocName(null);
   }, [currentMode]);
 
   useEffect(() => {
@@ -919,7 +923,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleTranslate = async (text, isReTranslate = false) => {
+  const handleTranslate = async (text, isReTranslate = false, activeSession = null) => {
     console.log('[Dashboard] handleTranslate called with:', text, 'isReTranslate:', isReTranslate);
     setInputText(text);
     setIsFromCache(false);
@@ -929,7 +933,15 @@ export default function Dashboard() {
       return;
     }
 
-    if (!session || !session.uid) {
+    let resolvedSession = activeSession || session;
+    if (!resolvedSession || !resolvedSession.uid) {
+      resolvedSession = await getSession();
+      if (resolvedSession) {
+        setSession(resolvedSession);
+      }
+    }
+
+    if (!resolvedSession || !resolvedSession.uid) {
       setIsAuthModalOpen(true);
       setOutputText('Vui lòng đăng nhập để sử dụng tính năng dịch thuật.');
       return;
@@ -959,7 +971,7 @@ export default function Dashboard() {
         console.log(`[Dashboard] 🎯 Khớp từ điển cá nhân cho:`, matchedTerms);
       }
 
-      const result = await translateText(text, '', 'auto', glossaryDict, glossaryMode, session.uid, modelId, shareTranslation);
+      const result = await translateText(text, '', 'auto', glossaryDict, glossaryMode, resolvedSession.uid, modelId, shareTranslation);
       console.log('[Dashboard] Translation result:', result);
       setOutputText(result.translation || 'Không nhận được bản dịch');
       if (result.from_cache) {
@@ -1081,23 +1093,23 @@ export default function Dashboard() {
       console.warn("[Recharge] Cannot proceed. Session or selected package is missing.", { session, selectedPackage });
       return;
     }
-    
+
     setIsProcessingPayment(true);
-    
+
     let amount = 0;
     if (selectedPackage === 'basic') amount = 50000;
     else if (selectedPackage === 'standard') amount = 200000;
     else if (selectedPackage === 'premium') amount = 500000;
     else if (selectedPackage === 'custom') amount = selectedCustomAmount;
-    
+
     console.log("[Recharge] Calculated amount:", amount);
-    
+
     if (amount < 1000) {
       showAlert("Số tiền nạp tối thiểu là 1.000 VNĐ");
       setIsProcessingPayment(false);
       return;
     }
-    
+
     try {
       const payload = {
         uid: session.uid,
@@ -1107,17 +1119,17 @@ export default function Dashboard() {
         cancel_url: window.location.origin + window.location.pathname + "?payment=cancel"
       };
       console.log("[Recharge] Sending payload to backend:", payload);
-      
+
       const response = await fetch('https://hvmndoan-production.up.railway.app/api/payment/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
+
       console.log("[Recharge] Response status code:", response.status);
       const res = await response.json();
       console.log("[Recharge] Parsed backend response:", res);
-      
+
       if (res.success && res.checkoutUrl) {
         console.log("[Recharge] Success! Redirecting user to PayOS portal:", res.checkoutUrl);
         setIsUserDropdownOpen(false);
@@ -1216,10 +1228,10 @@ export default function Dashboard() {
     try {
       setCurrentRating(rating);
       await rateTranslation(session.uid, inputText, rating);
-      
+
       // Update local history rating as well so UI updates instantly
-      setRecentTranslations(prev => 
-        prev.map(item => 
+      setRecentTranslations(prev =>
+        prev.map(item =>
           (item.source === inputText) ? { ...item, rating } : item
         )
       );
@@ -1321,9 +1333,18 @@ export default function Dashboard() {
       let base64Image = '';
       if (fileOrUrl instanceof File || fileOrUrl instanceof Blob) {
         base64Image = await fileToBase64(fileOrUrl);
+      } else if (typeof fileOrUrl === 'string' && (fileOrUrl.startsWith('http') || fileOrUrl.startsWith('chrome-extension'))) {
+        console.log('[OCR] Fetching image from URL to convert to base64...', fileOrUrl);
+        const imgResponse = await fetch(fileOrUrl);
+        if (!imgResponse.ok) throw new Error(`Không thể tải ảnh từ URL: ${imgResponse.status}`);
+        const blob = await imgResponse.blob();
+        base64Image = await fileToBase64(blob);
       } else {
         base64Image = fileOrUrl;
       }
+
+      setSelectedImageSrc(base64Image);
+      setSelectedDocName(null);
 
       console.log('[OCR] Sending image to backend for processing...');
       const response = await fetch('https://hvmndoan-production.up.railway.app/api/ocr', {
@@ -1342,7 +1363,18 @@ export default function Dashboard() {
       const data = await response.json();
       console.log('[OCR] Extracted Text from backend:', data.text);
       setInputText(data.text);
-      handleTranslate(data.text); // Trigger translation
+
+      // Ensure we have a valid session before calling handleTranslate
+      let activeSession = session;
+      if (!activeSession || !activeSession.uid) {
+        console.log('[OCR] Active session not found in state, trying to fetch from storage...');
+        activeSession = await getSession();
+        if (activeSession) {
+          setSession(activeSession);
+        }
+      }
+
+      await handleTranslate(data.text, false, activeSession);
     } catch (error) {
       console.error('[OCR] Error during process:', error);
       setInputText('Lỗi khi trích xuất chữ: ' + error.message);
@@ -1365,6 +1397,9 @@ export default function Dashboard() {
     console.log('[Doc] Starting document upload...');
     const file = e.target.files[0];
     if (!file) return;
+
+    setSelectedDocName(file.name);
+    setSelectedImageSrc(null);
 
     const filename = file.name.toLowerCase();
 
@@ -1450,10 +1485,10 @@ export default function Dashboard() {
 
           {session ? (
             <div style={{ position: 'relative' }}>
-              <div 
-                className="gt-avatar" 
-                title={`Tài khoản: ${session.email}\nVai trò: ${session.role}`} 
-                onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)} 
+              <div
+                className="gt-avatar"
+                title={`Tài khoản: ${session.email}\nVai trò: ${session.role}`}
+                onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                 style={{ cursor: 'pointer', userSelect: 'none' }}
               >
                 {session.email.substring(0, 2).toUpperCase()}
@@ -1461,12 +1496,12 @@ export default function Dashboard() {
 
               {isUserDropdownOpen && (
                 <>
-                  <div 
-                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} 
-                    onClick={() => setIsUserDropdownOpen(false)} 
+                  <div
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }}
+                    onClick={() => setIsUserDropdownOpen(false)}
                   />
                   <div style={{
-                    position: 'absolute', top: '48px', right: '0', 
+                    position: 'absolute', top: '48px', right: '0',
                     background: 'var(--card-bg)',
                     backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
                     border: '1px solid var(--card-border)', borderRadius: '12px', padding: '16px',
@@ -1502,14 +1537,14 @@ export default function Dashboard() {
                           }}></div>
                         </div>
                       )}
-                      
+
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 500, marginTop: '2px' }}>
                         <span>Credit đã mua</span>
                         <strong style={{ color: 'var(--accent-primary)' }}>
                           {totalCredit === -1 ? 'Vô hạn' : `${purchasedCredit.toLocaleString('vi-VN')}đ`}
                         </strong>
                       </div>
-                      
+
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-primary)', fontWeight: 700, marginTop: '6px', borderTop: '1px solid var(--card-border)', paddingTop: '8px' }}>
                         <span>Tổng số dư</span>
                         <span style={{ color: 'var(--accent-primary)' }}>
@@ -1729,19 +1764,58 @@ export default function Dashboard() {
               <div className="gt-input-box">
                 {currentMode === 'image' && (
                   <div className="gt-image-upload">
-                    <label className="gt-upload-label">
-                      <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
-                      <span className="upload-icon">📷</span> Chọn ảnh để quét chữ
-                    </label>
+                    {!selectedImageSrc ? (
+                      <label className="gt-upload-label">
+                        <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+                        <span className="upload-icon">📷</span> Chọn ảnh để quét chữ
+                      </label>
+                    ) : (
+                      <div className="gt-preview-container">
+                        <div className="gt-image-preview-wrapper">
+                          <img src={selectedImageSrc} alt="Preview" className="gt-image-preview" />
+                          <button
+                            className="gt-preview-remove-btn"
+                            onClick={() => {
+                              setSelectedImageSrc(null);
+                              setInputText('');
+                              setOutputText('');
+                            }}
+                            title="Xóa ảnh"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {isProcessingOCR && <div className="ocr-loading">Đang xử lý ảnh...</div>}
                   </div>
                 )}
                 {currentMode === 'doc' && (
                   <div className="gt-image-upload">
-                    <label className="gt-upload-label">
-                      <input type="file" accept=".pdf,.docx,.txt,.md" onChange={handleDocUpload} style={{ display: 'none' }} />
-                      <span className="upload-icon"><FileOutlined /></span> Chọn tài liệu (.pdf, .docx, .txt, .md)
-                    </label>
+                    {!selectedDocName ? (
+                      <label className="gt-upload-label">
+                        <input type="file" accept=".pdf,.docx,.txt,.md" onChange={handleDocUpload} style={{ display: 'none' }} />
+                        <span className="upload-icon"><FileOutlined /></span> Chọn tài liệu (.pdf, .docx, .txt, .md)
+                      </label>
+                    ) : (
+                      <div className="gt-preview-container">
+                        <div className="gt-doc-preview-wrapper">
+                          <span className="doc-icon"><FileOutlined /></span>
+                          <span className="doc-name">{selectedDocName}</span>
+                          <button
+                            className="gt-preview-remove-btn"
+                            onClick={() => {
+                              setSelectedDocName(null);
+                              setInputText('');
+                              setOutputText('');
+                            }}
+                            title="Xóa tài liệu"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {isProcessingDoc && <div className="ocr-loading">Đang phân tích tài liệu...</div>}
                   </div>
                 )}
@@ -1935,8 +2009,8 @@ export default function Dashboard() {
             </div>
 
             <div className="gt-modal-body" style={{ color: 'var(--text-primary)', padding: '24px' }}>
-              <div style={{ 
-                marginBottom: '24px', fontSize: '14px', color: 'var(--text-primary)', background: 'var(--btn-bg)', 
+              <div style={{
+                marginBottom: '24px', fontSize: '14px', color: 'var(--text-primary)', background: 'var(--btn-bg)',
                 padding: '16px 20px', borderRadius: '10px', border: '1px solid var(--card-border)',
                 lineHeight: '1.6', display: 'flex', flexDirection: 'column', gap: '6px'
               }}>
@@ -1950,7 +2024,7 @@ export default function Dashboard() {
                   • Đã mua: {purchasedCredit.toLocaleString('vi-VN')} VNĐ
                 </div>
               </div>
-              
+
               <div style={{
                 display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
                 gap: '24px', paddingBottom: '10px'
@@ -2012,13 +2086,13 @@ export default function Dashboard() {
                 </div>
 
                 {/* Custom Package */}
-                <div className="pricing-card" style={{ 
-                  cursor: 'default', 
-                  gridColumn: '1 / -1', 
-                  display: 'flex', 
-                  flexDirection: 'row', 
+                <div className="pricing-card" style={{
+                  cursor: 'default',
+                  gridColumn: '1 / -1',
+                  display: 'flex',
+                  flexDirection: 'row',
                   flexWrap: 'wrap',
-                  alignItems: 'center', 
+                  alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: '20px',
                   padding: '24px'
@@ -2029,8 +2103,8 @@ export default function Dashboard() {
                       Nhập số tiền bạn muốn nạp vào tài khoản (tối thiểu là 1.000 VNĐ). Hệ thống sẽ tạo mã QR tương ứng để giao dịch.
                     </p>
                     <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '300px' }}>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         min="1000"
                         placeholder="Nhập số tiền (VNĐ)..."
                         value={customRechargeAmount || ''}
@@ -2049,12 +2123,12 @@ export default function Dashboard() {
                       />
                     </div>
                   </div>
-                  <div style={{ 
-                    flex: '1', 
-                    minWidth: '180px', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'flex-end', 
+                  <div style={{
+                    flex: '1',
+                    minWidth: '180px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-end',
                     justifyContent: 'center',
                     gap: '10px'
                   }}>
@@ -2062,8 +2136,8 @@ export default function Dashboard() {
                     <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--accent-primary)', lineHeight: '1.2' }}>
                       {(customRechargeAmount || 0).toLocaleString('vi-VN')} <span style={{ fontSize: '14px', fontWeight: 500 }}>VNĐ</span>
                     </div>
-                    <button 
-                      className="gt-btn-primary" 
+                    <button
+                      className="gt-btn-primary"
                       style={{ width: '100%', padding: '12px', fontWeight: 700, borderRadius: '8px' }}
                       onClick={() => {
                         if (!customRechargeAmount || customRechargeAmount < 1000) {
@@ -2137,9 +2211,9 @@ export default function Dashboard() {
                     <p>Chọn giữa Qwen2 (5k/15k) hoặc Qwen3 (7k/21k).</p>
                   </div>
                   <select
-                      value={modelId}
-                      onChange={(e) => setModelId(e.target.value)}
-                      className="gt-select"
+                    value={modelId}
+                    onChange={(e) => setModelId(e.target.value)}
+                    className="gt-select"
                   >
                     {availableModels.map(model => (
                       <option key={model.model_id} value={model.model_id}>
@@ -2302,10 +2376,10 @@ export default function Dashboard() {
                   }}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" style={{ display: 'inline-block' }}>
-                    <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.355 0 3.36 2.655 1.345 6.527l3.921 3.238z"/>
-                    <path fill="#4285F4" d="M23.455 12.273c0-.818-.073-1.609-.209-2.373H12v4.582h6.427a5.532 5.532 0 0 1-2.4 3.627l3.745 2.909c2.191-2.018 3.455-4.991 3.455-8.745z"/>
-                    <path fill="#FBBC05" d="M5.266 14.235A7.077 7.077 0 0 1 4.909 12c0-.791.136-1.555.357-2.235L1.345 6.527A11.954 11.954 0 0 0 0 12c0 2.018.5 3.918 1.382 5.6l3.884-3.365z"/>
-                    <path fill="#34A853" d="M12 24c3.245 0 5.973-1.073 7.964-2.91l-3.745-2.909c-1.036.691-2.364 1.109-3.964 1.109-3.055 0-5.645-2.064-6.564-4.836l-3.909 3.027C3.327 21.327 7.327 24 12 24z"/>
+                    <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.355 0 3.36 2.655 1.345 6.527l3.921 3.238z" />
+                    <path fill="#4285F4" d="M23.455 12.273c0-.818-.073-1.609-.209-2.373H12v4.582h6.427a5.532 5.532 0 0 1-2.4 3.627l3.745 2.909c2.191-2.018 3.455-4.991 3.455-8.745z" />
+                    <path fill="#FBBC05" d="M5.266 14.235A7.077 7.077 0 0 1 4.909 12c0-.791.136-1.555.357-2.235L1.345 6.527A11.954 11.954 0 0 0 0 12c0 2.018.5 3.918 1.382 5.6l3.884-3.365z" />
+                    <path fill="#34A853" d="M12 24c3.245 0 5.973-1.073 7.964-2.91l-3.745-2.909c-1.036.691-2.364 1.109-3.964 1.109-3.055 0-5.645-2.064-6.564-4.836l-3.909 3.027C3.327 21.327 7.327 24 12 24z" />
                   </svg>
                   Đăng nhập bằng Google
                 </button>

@@ -6,27 +6,22 @@ const BASE_URL = 'https://hvmndoan-production.up.railway.app'
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'it-translator',
-    title: 'Translate with IT Translator',
+    title: 'Dịch văn bản',
     contexts: ['selection'],
   });
   chrome.contextMenus.create({
     id: 'it-explainer',
-    title: 'Explain with IT Translator',
+    title: 'Giải thích văn bản',
     contexts: ['selection'],
   });
   chrome.contextMenus.create({
     id: 'it-image-translator',
-    title: 'Dịch hình ảnh với IT Translator',
+    title: 'Dịch hình ảnh',
     contexts: ['image'],
   });
   chrome.contextMenus.create({
     id: 'it-open-dashboard',
     title: 'Mở Dashboard IT Translator',
-    contexts: ['all'],
-  });
-  chrome.contextMenus.create({
-    id: 'it-translate-page',
-    title: 'Dịch toàn bộ trang web',
     contexts: ['all'],
   });
 })
@@ -36,21 +31,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // If message is a request to translate
   if (message.type === 'TRANSLATE_TEXT') {
     const { text, context } = message;
-    
-    chrome.storage.local.get(['inferenceMode'], (data) => {
-      const mode = data.inferenceMode || 'local';
-      
-      if (mode === 'api') {
-        // In API mode, translate directly without opening sidebar
-        translateDirectly(text, context, sender.tab.id);
-      } else {
-        // In local mode, save to storage and open sidebar
-        chrome.storage.local.set({ 
-          pendingTranslation: { text, context, timestamp: Date.now() } 
-        });
-        chrome.sidePanel.open({ tabId: sender.tab.id });
-      }
-    });
+    translateDirectly(text, context, sender.tab.id);
   }
 
   // If message is from Side Panel (engine), forward it to the active tab (UI)
@@ -80,9 +61,9 @@ function parseTranslation(data) {
       }
     }
   }
-  
+
   if (!text) return '';
-  
+
   // Clean up <think> reasoning tags
   if (text.includes('<think>') && text.includes('</think>')) {
     text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
@@ -126,23 +107,23 @@ async function translateDirectly(text, context, tabId) {
       const response = await fetch(`${BASE_URL}/api/translate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          text, 
-          context, 
+        body: JSON.stringify({
+          text,
+          context,
           target_lang: 'auto',
           glossary: glossaryDict,
           glossary_mode: glossaryMode,
           user_id: userId
         }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`API error (${response.status})`);
       }
-      
+
       const data = await response.json();
       const translation = parseTranslation(data);
-      
+
       chrome.tabs.sendMessage(tabId, {
         type: 'GENERATE_PROGRESS',
         payload: { partialText: translation, done: true }
@@ -161,11 +142,11 @@ async function translateDirectly(text, context, tabId) {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'it-image-translator') {
     console.log('[Background] Context menu click: it-image-translator for image URL:', info.srcUrl);
-    chrome.storage.local.set({ 
-      pendingImageTranslation: { 
-        srcUrl: info.srcUrl, 
-        timestamp: Date.now() 
-      } 
+    chrome.storage.local.set({
+      pendingImageTranslation: {
+        srcUrl: info.srcUrl,
+        timestamp: Date.now()
+      }
     }, () => {
       const url = chrome.runtime.getURL('src/dashboard/index.html');
       chrome.tabs.create({ url });
@@ -179,13 +160,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     return;
   }
 
-  if (info.menuItemId === 'it-translate-page') {
-    console.log('[Background] Context menu click: it-translate-page');
-    if (tab && tab.id) {
-      chrome.tabs.sendMessage(tab.id, { type: 'TRANSLATE_PAGE_CMD' });
-    }
-    return;
-  }
+
 
   if (!info.selectionText) return;
 
@@ -197,13 +172,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.log('[Background] Content script not loaded on this tab. Falling back to Side Panel.');
-        chrome.storage.local.set({ 
-          pendingTranslation: { 
-            text: info.selectionText, 
-            context: '', 
+        chrome.storage.local.set({
+          pendingTranslation: {
+            text: info.selectionText,
+            context: '',
             target_lang: 'auto',
-            timestamp: Date.now() 
-          } 
+            timestamp: Date.now()
+          }
         });
         chrome.sidePanel.open({ tabId: tab.id });
       }
@@ -219,13 +194,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       if (chrome.runtime.lastError) {
         console.log('[Background] Content script not loaded on this tab (e.g. PDF view, chrome:// page). Falling back to Side Panel for explanation.');
         // Save explain task to storage
-        chrome.storage.local.set({ 
-          pendingTranslation: { 
-            text: info.selectionText, 
-            context: '', 
+        chrome.storage.local.set({
+          pendingTranslation: {
+            text: info.selectionText,
+            context: '',
             target_lang: 'explain',
-            timestamp: Date.now() 
-          } 
+            timestamp: Date.now()
+          }
         });
         // Open the side panel
         chrome.sidePanel.open({ tabId: tab.id });
@@ -246,28 +221,15 @@ chrome.commands.onCommand.addListener((command) => {
             const selection = window.getSelection();
             if (!selection || selection.rangeCount === 0) return null;
             const text = selection.toString().trim();
-            if (!text) return null;
-            
-            // Try to get context
-            const range = selection.getRangeAt(0);
-            const container = range.commonAncestorContainer;
-            const parentEl = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
-            const contextEl = parentEl.closest('p, section, article, li') || parentEl;
-            const context = contextEl?.innerText?.slice(0, 2000) || '';
-            
-            return { text, context };
+            return text || null;
           }
         }).then(results => {
-          const result = results[0].result;
-          if (result) {
-            chrome.storage.local.set({ 
-              pendingTranslation: { 
-                text: result.text, 
-                context: result.context, 
-                timestamp: Date.now() 
-              } 
+          const text = results?.[0]?.result;
+          if (text) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              type: 'TRIGGER_TRANSLATE_FROM_CONTEXT',
+              text: text
             });
-            chrome.sidePanel.open({ tabId: tabs[0].id });
           }
         });
       }

@@ -9,7 +9,7 @@ const SidePanel = () => {
   const [sourceText, setSourceText] = useState('');
   const [translation, setTranslation] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
-  const [inferenceMode, setInferenceMode] = useState('local'); // 'local' or 'api'
+  const [inferenceMode, setInferenceMode] = useState('api'); // 'local' or 'api'
   
   const sandboxRef = useRef(null);
   const [isSandboxReady, setIsSandboxReady] = useState(false);
@@ -226,22 +226,6 @@ const SidePanel = () => {
       <header>
         <div className="header-top">
           <h1>IT Translator</h1>
-          <div className="mode-selector">
-            <button 
-              className={`mode-btn ${inferenceMode === 'local' ? 'active' : ''}`}
-              onClick={() => inferenceMode !== 'local' && toggleMode()}
-              title="Run offline in browser"
-            >
-              Offline
-            </button>
-            <button 
-              className={`mode-btn ${inferenceMode === 'api' ? 'active' : ''}`}
-              onClick={() => inferenceMode !== 'api' && toggleMode()}
-              title="Use local LlamaFactory API"
-            >
-              API (Fine-tuned)
-            </button>
-          </div>
         </div>
         <div className={`status-badge ${isLoaded || inferenceMode === 'api' ? 'ready' : error ? 'error' : 'loading'}`}>
           {inferenceMode === 'api' ? 'API Mode Active' : status} 
