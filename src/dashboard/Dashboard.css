@@ -306,6 +306,7 @@ textarea {
   resize: none;
   outline: none;
   min-height: 120px;
+  overflow: hidden;
 }
 
 textarea::placeholder {

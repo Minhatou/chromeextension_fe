@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './Dashboard.css';
 import {
   translateText,
@@ -55,6 +55,29 @@ function parseTranslation(data) {
 }
 
 export default function Dashboard() {
+  const inputRef = useRef(null);
+  const explainRef = useRef(null);
+  const summarizeRef = useRef(null);
+
+  const adjustHeight = (ref) => {
+    if (ref.current) {
+      ref.current.style.height = 'auto';
+      ref.current.style.height = ref.current.scrollHeight + 'px';
+    }
+  };
+
+  const [alertConfig, setAlertConfig] = useState(null);
+
+  const showAlert = (message) => {
+    let type = 'info';
+    if (message.includes('🎉') || message.includes('thành công') || message.includes('chuẩn') || message.includes('chú') || message.includes('Sổ tay') || message.includes('sổ tay') || message.includes('đóng góp')) {
+      type = 'success';
+    } else if (message.includes('❌') || message.includes('Lỗi') || message.includes('hủy') || message.includes('thất bại') || message.includes('Không thể') || message.includes('lỗi')) {
+      type = 'error';
+    }
+    setAlertConfig({ message, type });
+  };
+
   const [inputText, setInputText] = useState('');
   const [outputText, setOutputText] = useState('');
   const [sourceLang, setSourceLang] = useState('Anh');
@@ -224,14 +247,14 @@ export default function Dashboard() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('payment') === 'success') {
-      alert("🎉 Yêu cầu thanh toán của bạn đang được xử lý! Số dư credit sẽ được cập nhật tự động sau vài giây.");
+      showAlert("🎉 Yêu cầu thanh toán của bạn đang được xử lý! Số dư credit sẽ được cập nhật tự động sau vài giây.");
       setRefreshTrigger(prev => prev + 1);
       setTimeout(() => {
         setRefreshTrigger(prev => prev + 1);
       }, 3000);
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (params.get('payment') === 'cancel') {
-      alert("❌ Giao dịch thanh toán đã bị hủy.");
+      showAlert("❌ Giao dịch thanh toán đã bị hủy.");
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
@@ -678,6 +701,18 @@ export default function Dashboard() {
     setCurrentRating(null);
   }, [currentMode]);
 
+  useEffect(() => {
+    adjustHeight(inputRef);
+  }, [inputText]);
+
+  useEffect(() => {
+    adjustHeight(explainRef);
+  }, [explainInput]);
+
+  useEffect(() => {
+    adjustHeight(summarizeRef);
+  }, [summarizeInput]);
+
 
 
   const addTerm = () => {
@@ -689,14 +724,14 @@ export default function Dashboard() {
 
   const handleSaveNewTerm = async () => {
     if (!newTerm.trim() || !newMeaning.trim()) {
-      alert("Vui lòng nhập đầy đủ từ tiếng Anh và nghĩa tiếng Việt!");
+      showAlert("Vui lòng nhập đầy đủ từ tiếng Anh và nghĩa tiếng Việt!");
       return;
     }
 
     // Check for duplicate
     const exists = savedVocabulary.some(item => item.term.toLowerCase() === newTerm.trim().toLowerCase());
     if (exists) {
-      alert("Thuật ngữ này đã tồn tại trong sổ tay!");
+      showAlert("Thuật ngữ này đã tồn tại trong sổ tay!");
       return;
     }
 
@@ -715,7 +750,7 @@ export default function Dashboard() {
           setSavedVocabulary(newVocab);
           setStats(prev => ({ ...prev, savedTerms: newVocab.length }));
         } else {
-          alert("Lỗi khi lưu từ: " + data.error);
+          showAlert("Lỗi khi lưu từ: " + data.error);
         }
       } catch (err) {
         console.error("Failed to save to Firestore", err);
@@ -787,17 +822,17 @@ export default function Dashboard() {
 
   const handleSaveFromHistory = async (item) => {
     if (!session || !session.uid) {
-      alert("Vui lòng đăng nhập để lưu bản dịch!");
+      showAlert("Vui lòng đăng nhập để lưu bản dịch!");
       return;
     }
     try {
       const res = await addSavedTranslation(session.uid, item.source, item.target, '');
       if (res.success) {
         setSavedTranslations(prev => [res.entry, ...prev]);
-        alert("Đã lưu vào Sổ tay bản dịch!");
+        showAlert("Đã lưu vào Sổ tay bản dịch!");
       }
     } catch (err) {
-      alert("Không thể lưu bản dịch: " + err.message);
+      showAlert("Không thể lưu bản dịch: " + err.message);
     }
   };
 
@@ -849,7 +884,7 @@ export default function Dashboard() {
           }));
 
           if (valid.length === 0) {
-            alert("Không tìm thấy dữ liệu hợp lệ trong file!");
+            showAlert("Không tìm thấy dữ liệu hợp lệ trong file!");
             return;
           }
 
@@ -867,12 +902,12 @@ export default function Dashboard() {
           } else {
             localStorage.setItem('glossary', JSON.stringify(newVocab));
           }
-          alert(`Đã nhập thành công ${valid.length} thuật ngữ!`);
+          showAlert(`Đã nhập thành công ${valid.length} thuật ngữ!`);
         } else {
-          alert("File JSON không hợp lệ (Phải là một mảng)!");
+          showAlert("File JSON không hợp lệ (Phải là một mảng)!");
         }
       } catch (err) {
-        alert("Lỗi khi đọc file JSON: " + err.message);
+        showAlert("Lỗi khi đọc file JSON: " + err.message);
       }
     };
     reader.readAsText(file);
@@ -1061,7 +1096,7 @@ export default function Dashboard() {
     console.log("[Recharge] Calculated amount:", amount);
     
     if (amount < 1000) {
-      alert("Số tiền nạp tối thiểu là 1.000 VNĐ");
+      showAlert("Số tiền nạp tối thiểu là 1.000 VNĐ");
       setIsProcessingPayment(false);
       return;
     }
@@ -1094,12 +1129,12 @@ export default function Dashboard() {
         window.location.href = res.checkoutUrl;
       } else {
         console.error("[Recharge] Backend returned failure:", res);
-        alert("Lỗi khi tạo giao dịch PayOS: " + (res.error || "Không rõ nguyên nhân"));
+        showAlert("Lỗi khi tạo giao dịch PayOS: " + (res.error || "Không rõ nguyên nhân"));
         setIsProcessingPayment(false);
       }
     } catch (err) {
       console.error("[Recharge] Exception occurred during checkout request:", err);
-      alert("Lỗi khi kết nối đến máy chủ thanh toán: " + err.message);
+      showAlert("Lỗi khi kết nối đến máy chủ thanh toán: " + err.message);
       setIsProcessingPayment(false);
     }
   };
@@ -1129,7 +1164,7 @@ export default function Dashboard() {
     // Check if already exists
     const exists = savedVocabulary.some(item => item.term === inputText && item.meaning === outputText);
     if (exists) {
-      alert("Mục này đã có trong sổ tay!");
+      showAlert("Mục này đã có trong sổ tay!");
       return;
     }
 
@@ -1147,13 +1182,13 @@ export default function Dashboard() {
           const newVocab = [...savedVocabulary, data.entry];
           setSavedVocabulary(newVocab);
           setStats(prev => ({ ...prev, savedTerms: newVocab.length }));
-          alert("Đã lưu vào sổ tay trên Firestore!");
+          showAlert("Đã lưu vào sổ tay trên Firestore!");
         } else {
-          alert("Lỗi khi lưu từ: " + data.error);
+          showAlert("Lỗi khi lưu từ: " + data.error);
         }
       } catch (err) {
         console.error("Failed to save to Firestore", err);
-        alert("Lỗi kết nối máy chủ");
+        showAlert("Lỗi kết nối máy chủ");
       }
     } else {
       const newVocab = [...savedVocabulary, {
@@ -1171,14 +1206,14 @@ export default function Dashboard() {
       } else {
         localStorage.setItem('glossary', JSON.stringify(newVocab));
       }
-      alert("Đã lưu vào sổ tay (Offline)!");
+      showAlert("Đã lưu vào sổ tay (Offline)!");
     }
   };
 
   const handleRate = async (rating) => {
     if (!inputText.trim() || !outputText.trim()) return;
     if (!session || !session.uid) {
-      alert("Vui lòng đăng nhập để đánh giá bản dịch!");
+      showAlert("Vui lòng đăng nhập để đánh giá bản dịch!");
       return;
     }
     try {
@@ -1205,11 +1240,11 @@ export default function Dashboard() {
 
   const handleOpenSaveTrans = () => {
     if (!inputText.trim() || !outputText.trim() || outputText === 'Đang dịch...' || outputText.startsWith('Lỗi khi dịch')) {
-      alert("Chưa có bản dịch hợp lệ để lưu!");
+      showAlert("Chưa có bản dịch hợp lệ để lưu!");
       return;
     }
     if (!session || !session.uid) {
-      alert("Vui lòng đăng nhập để lưu bản dịch!");
+      showAlert("Vui lòng đăng nhập để lưu bản dịch!");
       return;
     }
     setSaveTransNote('');
@@ -1223,11 +1258,11 @@ export default function Dashboard() {
       if (res.success) {
         setSavedTranslations(prev => [res.entry, ...prev]);
         setIsSaveTransOpen(false);
-        alert("Đã lưu bản dịch thành công!");
+        showAlert("Đã lưu bản dịch thành công!");
       }
     } catch (err) {
       console.error("Failed to save translation", err);
-      alert("Không thể lưu bản dịch: " + err.message);
+      showAlert("Không thể lưu bản dịch: " + err.message);
     }
   };
 
@@ -1260,7 +1295,7 @@ export default function Dashboard() {
 
   const handleOpenContribute = () => {
     if (!inputText.trim() || !outputText.trim() || outputText === 'Đang dịch...') {
-      alert("Chưa có bản dịch hợp lệ để đóng góp!");
+      showAlert("Chưa có bản dịch hợp lệ để đóng góp!");
       return;
     }
     setSuggestedTrans(outputText);
@@ -1270,7 +1305,7 @@ export default function Dashboard() {
 
   const handleContributeSubmit = async () => {
     if (!suggestedTrans.trim()) {
-      alert("Vui lòng nhập bản dịch đóng góp!");
+      showAlert("Vui lòng nhập bản dịch đóng góp!");
       return;
     }
     try {
@@ -1285,7 +1320,7 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error("Failed to contribute translation", err);
-      alert("Không thể gửi đóng góp: " + err.message);
+      showAlert("Không thể gửi đóng góp: " + err.message);
     }
   };
 
@@ -1656,6 +1691,7 @@ export default function Dashboard() {
             <div className="gt-text-container">
               <div className="gt-input-box">
                 <textarea
+                  ref={explainRef}
                   placeholder="Nhập thuật ngữ hoặc đoạn văn bản IT cần giải thích..."
                   value={explainInput}
                   onChange={(e) => setExplainInput(e.target.value)}
@@ -1690,6 +1726,7 @@ export default function Dashboard() {
             <div className="gt-text-container">
               <div className="gt-input-box">
                 <textarea
+                  ref={summarizeRef}
                   placeholder="Nhập nội dung cần tóm tắt (bài viết, đoạn văn, tài liệu...)..."
                   value={summarizeInput}
                   onChange={(e) => setSummarizeInput(e.target.value)}
@@ -1742,6 +1779,7 @@ export default function Dashboard() {
                   </div>
                 )}
                 <textarea
+                  ref={inputRef}
                   placeholder={currentMode === 'image' ? "Chữ trích xuất từ ảnh sẽ hiện ở đây" : (currentMode === 'doc' ? "Nội dung tài liệu sẽ hiện ở đây" : "Nhập văn bản")}
                   value={inputText}
                   onChange={(e) => handleInputChange(e.target.value)}
@@ -2065,7 +2103,7 @@ export default function Dashboard() {
                       style={{ width: '100%', padding: '12px', fontWeight: 700, borderRadius: '8px' }}
                       onClick={() => {
                         if (!customRechargeAmount || customRechargeAmount < 1000) {
-                          alert("Số tiền nạp tối thiểu là 1.000 VNĐ!");
+                          showAlert("Số tiền nạp tối thiểu là 1.000 VNĐ!");
                           return;
                         }
                         handleOpenRechargeModal('custom', customRechargeAmount);
@@ -2466,6 +2504,22 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {alertConfig && (
+        <div className="gt-modal-overlay" style={{ zIndex: 2000 }} onClick={() => setAlertConfig(null)}>
+          <div className="gt-modal-content glass animate-slide-up" style={{ maxWidth: '360px', textAlign: 'center', padding: '24px', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>
+              {alertConfig.type === 'success' ? '🎉' : alertConfig.type === 'error' ? '❌' : 'ℹ️'}
+            </div>
+            <p style={{ fontSize: '15px', lineHeight: 1.6, color: 'var(--text-primary)', marginBottom: '20px', whiteSpace: 'pre-wrap', fontWeight: 500 }}>
+              {alertConfig.message}
+            </p>
+            <button className="gt-btn-primary" style={{ width: '100%', padding: '10px', height: '40px', justifyContent: 'center' }} onClick={() => setAlertConfig(null)}>
+              Đồng ý
+            </button>
           </div>
         </div>
       )}
