@@ -668,11 +668,12 @@ function ModelsTab({ uid, toast }) {
               </div>
               <div className="admin-form-group">
                 <label>Đường dẫn (Local path hoặc HuggingFace repo)</label>
-                <input
-                  className="admin-input"
+                <textarea
+                  className="admin-input admin-textarea"
                   placeholder="C:\paths\to\model..."
                   value={form.path}
                   onChange={e => setForm(p => ({ ...p, path: e.target.value }))}
+                  rows={3}
                 />
               </div>
               <div className="admin-form-group">

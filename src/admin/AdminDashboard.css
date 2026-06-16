@@ -524,6 +524,13 @@ body {
   background: var(--card-bg);
 }
 
+.admin-textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+  overflow-y: auto;
+}
+
 /* ── Toast ── */
 .admin-toast {
   position: fixed;
