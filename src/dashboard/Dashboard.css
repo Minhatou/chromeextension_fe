@@ -297,7 +297,7 @@ body {
 }
 
 textarea {
-  flex: 1;
+  flex: 0 0 auto;
   background: none;
   border: none;
   color: var(--text-primary);
@@ -306,7 +306,7 @@ textarea {
   resize: none;
   outline: none;
   min-height: 120px;
-  overflow: hidden;
+  overflow-y: hidden;
 }
 
 textarea::placeholder {
@@ -319,6 +319,8 @@ textarea::placeholder {
   font-size: 18px;
   color: var(--text-secondary);
   white-space: pre-wrap;
+  min-height: 120px;
+  overflow-y: auto;
 }
 
 .gt-output-text.has-content {
@@ -330,7 +332,8 @@ textarea::placeholder {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
+  margin-top: auto;
+  padding-top: 16px;
 }
 
 .footer-left, .footer-right {

@@ -147,9 +147,12 @@ export default function Dashboard() {
   const [totalCredit, setTotalCredit] = useState(100000.0);
   const [modelId, setModelId] = useState(() => {
     try {
-      return localStorage.getItem('modelId') || 'qwen2.5-7b';
-    } catch {
-      return 'qwen2.5-7b';
+      const storedModel = localStorage.getItem('modelId') || 'qwen2.5-7b-1606dft';
+      console.log("[localStorage Load] Loaded modelId:", storedModel);
+      return storedModel;
+    } catch (e) {
+      console.error("[localStorage Load Error] Failed to load modelId:", e);
+      return 'qwen2.5-7b-1606dft';
     }
   });
   const [availableModels, setAvailableModels] = useState([
@@ -179,8 +182,31 @@ export default function Dashboard() {
   const [creditCardCvv, setCreditCardCvv] = useState('');
   const [rechargeSuccess, setRechargeSuccess] = useState(false);
 
+  // Auto-adjust textarea heights on state changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      adjustHeight(inputRef);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [inputText, currentMode, selectedImageSrc, selectedDocName, isProcessingOCR, isProcessingDoc]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      adjustHeight(explainRef);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [explainInput, currentMode, isExplaining]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      adjustHeight(summarizeRef);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [summarizeInput, currentMode, isSummarizing]);
+
   // Sync modelId and shareTranslation changes
   useEffect(() => {
+    console.log("[localStorage Save] Saving modelId to storage:", modelId);
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.set({ modelId });
     } else {
@@ -2208,7 +2234,6 @@ export default function Dashboard() {
                 <div className="setting-row">
                   <div className="setting-info">
                     <h4>Mô hình AI dịch thuật</h4>
-                    <p>Chọn giữa Qwen2 (5k/15k) hoặc Qwen3 (7k/21k).</p>
                   </div>
                   <select
                     value={modelId}
