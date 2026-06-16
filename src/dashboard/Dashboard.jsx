@@ -147,9 +147,9 @@ export default function Dashboard() {
   const [totalCredit, setTotalCredit] = useState(100000.0);
   const [modelId, setModelId] = useState(() => {
     try {
-      return localStorage.getItem('modelId') || 'Qwen2.5';
+      return localStorage.getItem('modelId') || 'qwen2.5-7b';
     } catch {
-      return 'Qwen2.5';
+      return 'qwen2.5-7b';
     }
   });
   const [availableModels, setAvailableModels] = useState([
